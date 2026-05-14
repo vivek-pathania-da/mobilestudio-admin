@@ -1,0 +1,3701 @@
+# MobileStudio API — OpenAPI 3.0.1
+# Generated: April 2026
+# Base URL (dev): https://3jt1es1dae.execute-api.ap-south-1.amazonaws.com/dev
+# To view: paste into https://editor.swagger.io
+openapi: 3.0.1
+info:
+  title: MobileStudio API
+  version: 1.0.0
+  description: Authentication API for MobileStudio. All endpoints are under /v1.
+  x-internal-notes:
+    tokenStorageGuidance:
+      - "Access token: store in memory only (JavaScript variable). Do NOT store in localStorage or sessionStorage - vulnerable to XSS."
+      - "Refresh token: store in an HttpOnly cookie (web) or iOS Keychain / Android Keystore (mobile)."
+      - "userId: can be stored in localStorage (not sensitive)."
+    tokenRefreshFlow:
+      - "1. Make API call with access token in Authorization header"
+      - "2. If response is 401, call POST /v1/auth/refresh with refreshToken + userId"
+      - "3. Store the NEW accessToken and NEW refreshToken from the refresh response"
+      - "4. Retry the original API call with the new access token"
+      - "5. If /auth/refresh also returns 401, the session has expired - redirect to login"
+    passwordResetFlow:
+      - "1. User submits email to POST /v1/auth/forgot-password"
+      - "2. User receives email with link: https://yourapp.com/reset-password?token=UUID"
+      - "3. Frontend extracts the token from the URL query parameter"
+      - "4. Frontend shows a new password form"
+      - "5. On submit, call POST /v1/auth/reset-password with { resetToken, newPassword }"
+      - "6. On success, redirect to login"
+    cors:
+      - "All endpoints accept requests from any origin in dev."
+      - "In prod, only requests from the registered frontend domain are accepted."
+      - "Preflight OPTIONS requests are handled automatically by API Gateway."
+servers:
+  - url: https://3jt1es1dae.execute-api.ap-south-1.amazonaws.com/dev
+    description: Development server
+  - url: https://YOUR_PROD_URL/prod
+    description: Production server (replace before go-live)
+tags:
+  - name: Auth
+    description: Authentication endpoints
+  - name: Admin
+    description: Admin-only operations (requires JWT with role admin)
+  - name: Customers
+    description: >
+      Tenant registry (admin only). Each customer has a UUID `customerId` (primary key) and a unique
+      human-readable `customerCode` (e.g. AIRXYZ). Use **`customerId` (UUID)** as `{customerId}` in `/v1/themes/{customerId}`.
+      Supports `GET ?status=`, soft delete (churn), and `PATCH` to change `customerCode` only (themes stay under the same UUID).
+  - name: Common
+    description: Common shared endpoints
+  - name: Flights
+    description: Flight search and pricing endpoints
+  - name: Cart
+    description: >
+      Shopping cart for authenticated users — legs, passengers, and add-ons.
+      All routes require a Bearer access token. Cart TTL and totals are enforced server-side.
+  - name: Theme
+    description: >
+      Per-customer theme overrides and activation. GET active theme is public; all other theme
+      routes require a JWT with role admin.
+paths:
+  /v1/auth/signup:
+    post:
+      summary: Register a new user account
+      description: >
+        Creates a new user with role "user". Does not return tokens.
+        The user must call /auth/login after signup to obtain tokens.
+        Admins cannot be created via this endpoint.
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SignupData'
+        '400':
+          description: Validation error - invalid email format, weak password, or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                weakPassword:
+                  value:
+                    success: false
+                    message: Password must be at least 8 characters with one uppercase letter and one number
+                invalidEmail:
+                  value:
+                    success: false
+                    message: Invalid email format
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Email already registered
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/auth/login:
+    post:
+      summary: Authenticate and obtain tokens
+      description: >
+        Validates credentials and returns an access token (15 min) and a refresh token (7 days).
+        The refresh token is opaque (UUID) - store it securely alongside the userId.
+        Both are required to call /auth/refresh.
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LoginResult'
+        '401':
+          description: Invalid credentials
+          x-note-for-frontend-dev: >
+            This is returned for both "email not found" and "wrong password".
+            The API intentionally does not distinguish between the two.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Invalid email or password
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/auth/forgot-password:
+    post:
+      summary: Request a password reset email
+      description: >
+        Sends a password reset link to the provided email address if it exists.
+        Always returns 200 regardless of whether the email exists - this is intentional
+        to prevent email enumeration attacks. Do not show the user different messages
+        based on whether they received an email.
+        The reset token in the link is valid for 30 minutes.
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Request processed (email sent if address exists)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ForgotPasswordData'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/auth/reset-password:
+    post:
+      summary: Reset password using token from email
+      description: >
+        Resets the user's password using the token received in the forgot-password email.
+        The token is extracted from the reset link query parameter (?token=...).
+        After a successful reset:
+          - The reset token is invalidated (single use)
+          - All existing refresh tokens for the user are revoked (all sessions logged out)
+          - The user must login again to get new tokens
+        Token expires after 30 minutes.
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ResetPasswordData'
+        '400':
+          description: Weak password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token invalid, already used, or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Invalid or expired reset token
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/auth/refresh:
+    post:
+      summary: Obtain a new access token using a refresh token
+      description: >
+        Issues a new access token and rotates the refresh token.
+        IMPORTANT - refresh token rotation:
+          - The old refresh token is invalidated immediately after this call
+          - The response contains a NEW refresh token
+          - Always replace your stored refresh token with the new one
+          - If you call refresh twice with the same token, the second call will return 401
+        Call this endpoint when the access token expires (after 15 minutes).
+        You must send BOTH the refreshToken and the userId from the original login response.
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: New tokens issued
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RefreshResult'
+        '401':
+          description: Refresh token invalid, expired, or already used
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Invalid refresh token
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/auth/bootstrap-admin:
+    post:
+      summary: Create first admin or promote existing user (bootstrap secret)
+      description: >
+        Public endpoint gated by a deploy-time secret (`ADMIN_BOOTSTRAP_SECRET = adminsecret` / CDK context
+        `adminBootstrapSecret`). If the secret is not configured, returns 403.
+        With `password` + `name`: registers a new user with admin role.
+        With only `email` (no password): promotes an existing user to admin.
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BootstrapAdminRequest'
+      responses:
+        '200':
+          description: Existing user promoted to admin
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BootstrapAdminResult'
+        '201':
+          description: New admin user created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BootstrapAdminResult'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Secret missing, wrong, or bootstrap disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found (promote mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email already registered (create mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/auth/logout:
+    post:
+      summary: Revoke all sessions for the current user
+      description: >
+        Invalidates all refresh tokens for the authenticated user.
+        The access token will continue to work until it expires naturally (max 15 minutes).
+        To fully secure logout on the client side, also clear the access token from memory.
+        Requires a valid access token in the Authorization header.
+      tags: [Auth]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LogoutData'
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/common/search:
+    get:
+      summary: Live search for airlines or airports
+      description: >
+        Performs authenticated live search against airline or airport master data.
+        Required query param:
+          - type: airline or airport
+        Optional query param:
+          - query: search text
+        If query is provided, matching is case-insensitive prefix-based across name and code fields
+        and up to 20 search results are returned.
+        If query is omitted or empty, search_results is empty and favourites are still returned.
+      tags: [Common]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+          description: Optional search text used for live matching.
+        - name: type
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/SearchType'
+          description: Decides which table is searched.
+      responses:
+        '200':
+          description: Search results returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SearchResponseData'
+        '400':
+          description: Invalid query params
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidType:
+                  value:
+                    success: false
+                    message: "Invalid type. Allowed values: airline, airport"
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/common/populate:
+    post:
+      summary: Populate airlines or airports master table
+      description: >
+        Authenticated bulk upsert-style insert endpoint for master data population.
+        Uses request type to decide destination table:
+          - airline -> Airlines table
+          - airport -> Airports table
+        Each request can include up to 500 items.
+      tags: [Common]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PopulateRequest'
+      responses:
+        '200':
+          description: Records inserted successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PopulateResult'
+        '400':
+          description: Validation error for payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingBody:
+                  value:
+                    success: false
+                    message: Request body is required
+                invalidType:
+                  value:
+                    success: false
+                    message: "Invalid type. Allowed values: airline, airport"
+                invalidItems:
+                  value:
+                    success: false
+                    message: Each item must include name, code, and country
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/common/favourite:
+    post:
+      summary: Mark or unmark favourite entity for current user
+      description: >
+        Authenticated user-level favourite toggle endpoint.
+        Uses type + uid to identify an entity.
+        - isFavourite=true: mark as favourite (upsert)
+        - isFavourite=false: unmark favourite (delete)
+        Supports both airline and airport types.
+      tags: [Common]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FavouriteToggleRequest'
+      responses:
+        '200':
+          description: Favourite state updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/FavouriteToggleResult'
+        '400':
+          description: Validation error in payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingBody:
+                  value:
+                    success: false
+                    message: Request body is required
+                invalidType:
+                  value:
+                    success: false
+                    message: "Invalid type. Allowed values: airline, airport"
+                missingUid:
+                  value:
+                    success: false
+                    message: uid is required
+                invalidFlag:
+                  value:
+                    success: false
+                    message: isFavourite must be a boolean
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/customers:
+    get:
+      summary: List customers (tenants)
+      description: Newest first. Omit `status` to return active and churned customers.
+      tags: [Customers]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, churned]
+          description: When set, only customers with that status are returned.
+      responses:
+        '200':
+          description: Customer list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Customer'
+        '400':
+          description: Invalid query (e.g. unknown status)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      summary: Create a customer (tenant)
+      description: >
+        Creates a new customer with a generated UUID `customerId` and a unique `customerCode`.
+        Custom `customerCode` (if sent) must be 2–10 uppercase letters/digits after normalization; if omitted, a base
+        code is derived from `companyName` (common suffixes stripped). Auto-resolved collisions use a numeric suffix
+        (e.g. AIRXYZ, AIRXYZ2); stored codes may be up to 15 characters.
+      tags: [Customers]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomerRequest'
+      responses:
+        '201':
+          description: Customer created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Customer'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Could not allocate a unique customer code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/customers/{customerId}:
+    parameters:
+      - $ref: '#/components/parameters/CustomerTenantId'
+    get:
+      summary: Get customer by id
+      description: Returns the customer record. `customerId` in the path is the UUID primary key.
+      tags: [Customers]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Customer record
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Customer'
+        '400':
+          description: Invalid customerId (not a UUID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      summary: Update customer
+      description: >
+        Partial update: any combination of `customerCode`, `companyName`, `industry`, `primaryEmail`, `contactName`,
+        and `status` (`active` or `churned`). At least one field is required. `customerId` (UUID) never changes.
+        Churned customers can only be updated when reactivating with `"status": "active"` (other fields may be
+        included in the same request). Setting `status` to `churned` is equivalent to soft-delete semantics.
+      tags: [Customers]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerRequest'
+      responses:
+        '200':
+          description: Customer updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Customer'
+        '400':
+          description: >
+            Validation error (e.g. invalid customerId, empty body, churned customer without reactivation,
+            invalid field values)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: customerCode already used by another customer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      summary: Soft-delete customer (churn)
+      description: Sets status to `churned`. Repeat delete returns 400.
+      tags: [Customers]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Customer churned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Customer'
+        '400':
+          description: Already churned, or invalid customerId (not a UUID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/admin/users/{userId}/role:
+    patch:
+      summary: Set a user's global role (admin or user)
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRoleRequest'
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [userId, role]
+                        properties:
+                          userId:
+                            type: string
+                            format: uuid
+                          role:
+                            $ref: '#/components/schemas/UserRole'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/flights/search:
+    post:
+      summary: Search flights (outbound or inbound leg)
+      description: >
+        Returns card-ready flight offers for the requested route/date.
+        Round-trip behavior is handled by calling this endpoint twice:
+        first for outbound, then again for inbound with swapped airports and updated date.
+        No multicity support in v1.
+      tags: [Flights]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlightSearchRequest'
+      responses:
+        '200':
+          description: Flight offers returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/FlightSearchResponseData'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingRequiredFields:
+                  value:
+                    success: false
+                    message: fromAirportCode, toAirportCode and departureDate are required
+                sameRoute:
+                  value:
+                    success: false
+                    message: fromAirportCode and toAirportCode cannot be the same
+                invalidDate:
+                  value:
+                    success: false
+                    message: departureDate must be in YYYY-MM-DD format
+                invalidCabinClass:
+                  value:
+                    success: false
+                    message: Invalid cabinClass enum value
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/flights/fares:
+    get:
+      summary: Fetch fare options for a selected flight
+      description: >
+        Returns fare options (for example Standard/Flex/Premium) for a given flight card.
+      tags: [Flights]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: flightId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Fare options returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/FlightFareOptionsResponseData'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingFlightId:
+                  value:
+                    success: false
+                    message: flightId is required
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/flights/{flightId}/seatmap:
+    get:
+      summary: Fetch seat map for a flight
+      description: >
+        Returns a demo seat map. The path `flightId` is echoed back as-is (for example the DynamoDB offer UUID);
+        layout, route, currency, and taken seats are randomized per request and are not loaded from the database.
+      tags: [Flights]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: flightId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: >
+            Opaque flight identifier from your app (for example UUID from flight search). Echoed in the response;
+            not used to resolve stored seat data in this version.
+      responses:
+        '200':
+          description: Seat map returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SeatmapResponseData'
+        '404':
+          description: Flight or aircraft config not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingFlightId:
+                  value:
+                    success: false
+                    message: flightId is required
+                flightNotFound:
+                  value:
+                    success: false
+                    message: Flight not found
+                aircraftNotFound:
+                  value:
+                    success: false
+                    message: Aircraft configuration not found
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/flights/populate:
+    post:
+      summary: Populate flight tables from request payload
+      description: >
+        Inserts linked flight offers, fare options, and extras in bulk.
+        Validates that fareOptions.flightId and extras.flightId exist in offers.
+      tags: [Flights]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlightPopulateRequest'
+      responses:
+        '200':
+          description: Flight data inserted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/FlightPopulateResponseData'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingBody:
+                  value:
+                    success: false
+                    message: Request body is required
+                missingOffers:
+                  value:
+                    success: false
+                    message: offers must contain at least one item
+                invalidOfferFlightId:
+                  value:
+                    success: false
+                    message: Each offer must include flightId
+                fareLinkMismatch:
+                  value:
+                    success: false
+                    message: Each fareOption.flightId must reference an existing offer flightId
+                extraLinkMismatch:
+                  value:
+                    success: false
+                    message: Each extra.flightId must reference an existing offer flightId
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/flights/addons/catalog:
+    post:
+      summary: Add-ons catalog for one or more flight legs
+      description: >
+        Returns an add-ons catalog keyed by each flightId (offer UUID from flight search / populate).
+        For each leg, segment (airports, departure date, departureEpoch), currency, and included baggage
+        summary are read from the FlightOffers table. Add-on line items (baggage upsell, trip protection, meals)
+        remain demo content for this version.
+      tags: [Flights]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlightAddonsCatalogRequest'
+      responses:
+        '200':
+          description: Catalog per flightId
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/FlightAddonsCatalogResponseData'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingBody:
+                  value:
+                    success: false
+                    message: Request body is required
+                emptyFlightIds:
+                  value:
+                    success: false
+                    message: flightIds must be a non-empty array
+                tooManyLegs:
+                  value:
+                    success: false
+                    message: A maximum of 10 flightIds is allowed per request
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '404':
+          description: Unknown flightId (no offer row in FlightOffers)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "Flight offer not found for flightId: 00000000-0000-4000-8000-000000000000"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/carts:
+    post:
+      summary: Create a new cart
+      description: >
+        Creates a cart with 1–2 legs and at least one passenger. Leg `flightId` is resolved to
+        origin/destination when known (see seatmap flight config); otherwise airports are `UNKNOWN`.
+        `totalAmount` is computed from leg fares × passenger count plus any add-ons (initially legs only).
+      tags: [Cart]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCartRequest'
+      responses:
+        '201':
+          description: Cart created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CartDetailResponseData'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    get:
+      summary: List carts for the current user
+      description: >
+        Returns carts for the authenticated user. Active carts are listed first (soonest expiry first);
+        other statuses follow (newest first). Carts that are still `active` in the database but past
+        `expiresAt` are shown with status `expired` in this list (read-only enrichment; TTL may remove rows later).
+      tags: [Cart]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of cart summaries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/CartListItem'
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/carts/{cartId}:
+    get:
+      summary: Get cart detail
+      description: >
+        Returns full cart, legs, passengers, and add-ons. Ownership is required. Expired or non-active
+        carts may still be returned for display (no 410 on read); mutating endpoints enforce expiry and status.
+      tags: [Cart]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+      responses:
+        '200':
+          description: Cart detail
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CartDetailResponseData'
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '403':
+          description: Cart belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Forbidden
+        '404':
+          description: Cart not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      summary: Abandon cart
+      description: Sets cart status to `abandoned`. Requires an active, non-expired cart owned by the user.
+      tags: [Cart]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+      responses:
+        '200':
+          description: Cart marked abandoned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Cart abandoned
+                        required: [message]
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Cart not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Cart expired or not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/carts/{cartId}/legs/{legId}:
+    post:
+      summary: Replace a cart leg
+      description: >
+        Updates flight, fare, times, and inclusions for one leg. All add-ons tied to that leg are removed
+        and returned in the response. Cart total is recalculated and cart expiry is reset from now.
+      tags: [Cart]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+        - $ref: '#/components/parameters/LegId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceLegRequest'
+      responses:
+        '200':
+          description: Updated leg and deleted add-ons
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RemoveLegResultData'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Cart or leg not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Cart expired or not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/carts/{cartId}/passengers:
+    post:
+      summary: Add a passenger
+      description: Appends a passenger (max 9). Recalculates total (leg prices × passenger count + add-ons).
+      tags: [Cart]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddPassengerRequest'
+      responses:
+        '201':
+          description: Passenger created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CartPassenger'
+        '400':
+          description: Validation error (e.g. max passengers)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Cart not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Cart expired or not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/carts/{cartId}/passengers/{passengerId}:
+    delete:
+      summary: Remove a passenger
+      description: >
+        Removes a passenger and all add-ons linked to that passenger. Cannot remove the last passenger.
+        Recalculates cart total.
+      tags: [Cart]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+        - $ref: '#/components/parameters/PassengerId'
+      responses:
+        '200':
+          description: Deleted passenger id and removed add-ons
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RemovePassengerResultData'
+        '400':
+          description: Validation error (e.g. last passenger)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Cart or passenger not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Cart expired or not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/carts/{cartId}/addons:
+    post:
+      summary: Add an add-on
+      description: >
+        `trip_protect` is at most once per cart (no passenger/leg). Seat, meal, and baggage require
+        passenger and leg; at most one of each type per passenger per leg. Recalculates cart total.
+      tags: [Cart]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddAddonRequest'
+      responses:
+        '201':
+          description: Add-on created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CartAddon'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Cart, passenger, or leg not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict (duplicate trip protect or same type on same leg for passenger)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Cart expired or not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/carts/{cartId}/addons/{addonId}:
+    delete:
+      summary: Remove an add-on
+      description: Removes the add-on and recalculates cart total.
+      tags: [Cart]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+        - $ref: '#/components/parameters/AddonId'
+      responses:
+        '200':
+          description: Add-on removed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Addon removed
+                        required: [message]
+        '401':
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Unauthorized
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Cart or add-on not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Cart expired or not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/themes/{customerId}:
+    get:
+      summary: Get resolved active theme for a customer (public)
+      description: >
+        Returns the full resolved token map (defaults merged with active theme overrides).
+        If no active theme exists, returns a synthetic default payload (themeId `default`).
+        Supports conditional requests via If-None-Match / ETag (304 Not Modified).
+        No Authorization header required.
+      tags: [Theme]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ThemeCustomerId'
+      responses:
+        '200':
+          description: Resolved theme
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Entity tag, e.g. "v0" or "v3"
+            Cache-Control:
+              schema:
+                type: string
+              description: Private cache; revalidate each time (theme changes should be visible without long stale periods).
+              example: private, max-age=0, must-revalidate
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ThemeResponse'
+        '400':
+          description: customerId is not a valid UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: customerId path parameter missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      summary: Create a theme (admin)
+      description: New themes are inactive until activated. Only override tokens are stored in DynamoDB.
+      tags: [Theme]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ThemeCustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateThemeRequest'
+      responses:
+        '201':
+          description: Theme created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ThemeResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/themes/{customerId}/all:
+    get:
+      summary: List all themes for a customer (admin)
+      tags: [Theme]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ThemeCustomerId'
+      responses:
+        '200':
+          description: Theme summaries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ThemeListItem'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/themes/{customerId}/{themeId}:
+    put:
+      summary: Update a theme (admin)
+      description: Token updates are merged with existing overrides. version increments on each save.
+      tags: [Theme]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ThemeCustomerId'
+        - $ref: '#/components/parameters/ThemeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateThemeRequest'
+      responses:
+        '200':
+          description: Updated theme (full resolved tokens)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ThemeResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Theme not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      summary: Delete a theme (admin)
+      description: Cannot delete the active theme; activate another theme first.
+      tags: [Theme]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ThemeCustomerId'
+        - $ref: '#/components/parameters/ThemeId'
+      responses:
+        '200':
+          description: Theme deleted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [message]
+                        properties:
+                          message:
+                            type: string
+                            example: Theme deleted
+        '400':
+          description: Cannot delete active theme
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Theme not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/themes/{customerId}/{themeId}/activate:
+    patch:
+      summary: Activate a theme (admin)
+      description: Deactivates all other themes for the customer, then activates this one. No-op if already active.
+      tags: [Theme]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ThemeCustomerId'
+        - $ref: '#/components/parameters/ThemeId'
+      responses:
+        '200':
+          description: Active theme (full resolved tokens)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ThemeResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Theme not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Access token obtained from /auth/login or /auth/refresh.
+        Expires in 15 minutes. Pass as: Authorization: Bearer <token>
+  parameters:
+    CartId:
+      name: cartId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Cart identifier (UUID).
+    LegId:
+      name: legId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Leg identifier within the cart.
+    PassengerId:
+      name: passengerId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Passenger identifier within the cart.
+    AddonId:
+      name: addonId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Add-on identifier within the cart.
+    ThemeCustomerId:
+      name: customerId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: a1b2c3d4-e5f6-4789-a012-3456789abcde
+      description: >
+        Customer id from `GET|POST /v1/customers` — the UUID `customerId` (not `customerCode`).
+        Used as the DynamoDB partition key for theme rows.
+    CustomerTenantId:
+      name: customerId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: a1b2c3d4-e5f6-4789-a012-3456789abcde
+      description: >
+        Customer primary key (UUID) returned by `GET|POST /v1/customers`. Used in `/v1/customers/{customerId}` for GET, PATCH, and DELETE.
+    ThemeId:
+      name: themeId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+      description: >
+        Theme row id from create/list (UUID). For the synthetic default row only, the literal `default` may appear
+        in GET active-theme responses — do not use `default` in mutating paths.
+  responses:
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            message: Internal server error
+  schemas:
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+      required: [success, data]
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Invalid email or password
+      required: [success, message]
+
+    UserRole:
+      type: string
+      enum: [admin, user]
+      description: >
+        admin = internal/ops user with full access.
+        user = end user (mobile/web) with standard access.
+
+    UserObject:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        name:
+          type: string
+          example: John Doe
+        role:
+          $ref: '#/components/schemas/UserRole'
+      required: [userId, email, name, role]
+
+    LoginResult:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          description: JWT access token. Valid for 15 minutes.
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        refreshToken:
+          type: string
+          format: uuid
+          description: >
+            Opaque refresh token. Valid for 7 days.
+            Store securely (HttpOnly cookie or secure storage).
+            Must be sent with userId to /auth/refresh.
+          example: f47ac10b-58cc-4372-a567-0e02b2c3d479
+        expiresIn:
+          type: integer
+          description: Access token lifetime in seconds.
+          example: 900
+        tokenType:
+          type: string
+          example: Bearer
+        user:
+          $ref: '#/components/schemas/UserObject'
+      required: [accessToken, refreshToken, expiresIn, tokenType, user]
+
+    RefreshResult:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          description: New JWT access token. Valid for 15 minutes.
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        refreshToken:
+          type: string
+          format: uuid
+          description: >
+            New refresh token. The previous refresh token is invalidated immediately.
+            Always store the latest refresh token - old ones are single-use.
+          example: c7d8e9f0-1234-5678-abcd-ef0123456789
+        expiresIn:
+          type: integer
+          example: 900
+        tokenType:
+          type: string
+          example: Bearer
+      required: [accessToken, refreshToken, expiresIn, tokenType]
+
+    SearchType:
+      type: string
+      enum: [airline, airport]
+      description: Entity group used to choose destination/search table.
+
+    SearchResultItem:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/SearchType'
+        value:
+          type: string
+          description: Display name for the matched entity.
+          example: Indira Gandhi International Airport
+        uid:
+          type: string
+          format: uuid
+          example: 3a24ba26-0f0b-4ecf-8fd7-7d1838d7a4ee
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Extensible key-value details for client usage.
+          example:
+            code: DEL
+            country: India
+      required: [type, value, uid, metadata]
+
+    SearchResponseData:
+      type: object
+      properties:
+        search_results:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/SearchResultItem'
+        favourites:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResultItem'
+      required: [search_results, favourites]
+
+    PopulateItem:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: Air India
+        code:
+          type: string
+          minLength: 1
+          example: AI
+        country:
+          type: string
+          minLength: 1
+          example: India
+      required: [name, code, country]
+
+    PopulateRequest:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/SearchType'
+        items:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/PopulateItem'
+      required: [type, items]
+
+    PopulateResult:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/SearchType'
+        inserted:
+          type: integer
+          minimum: 1
+          example: 2
+      required: [type, inserted]
+
+    FavouriteToggleRequest:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/SearchType'
+        uid:
+          type: string
+          format: uuid
+          example: 3a24ba26-0f0b-4ecf-8fd7-7d1838d7a4ee
+        value:
+          type: string
+          description: Required only when isFavourite is true.
+          example: Lufthansa
+        isFavourite:
+          type: boolean
+          description: true to mark favourite, false to unmark.
+          example: true
+      required: [type, uid, isFavourite]
+
+    FavouriteToggleResult:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/SearchType'
+        uid:
+          type: string
+          format: uuid
+          example: 3a24ba26-0f0b-4ecf-8fd7-7d1838d7a4ee
+        isFavourite:
+          type: boolean
+          example: true
+      required: [type, uid, isFavourite]
+
+    CabinClassInt:
+      type: integer
+      enum: [0, 1, 2, 3, 4]
+      x-enumNames: [any, economy, premium_economy, business, first]
+      description: Fixed integer enum for cabin class.
+
+    RefundabilityInt:
+      type: integer
+      enum: [0, 1, 2]
+      x-enumNames: [non_refundable, partially_refundable, fully_refundable]
+      description: Fixed integer enum for refundability.
+
+    PricingModelInt:
+      type: integer
+      enum: [1, 2]
+      x-enumNames: [per_person_trip, per_segment]
+      description: Fixed integer enum for extras pricing model.
+
+    StopTypeInt:
+      type: integer
+      enum: [0, 1, 2]
+      x-enumNames: [direct, one_stop, multi_stop]
+      description: Fixed integer enum for stop types.
+
+    SeatCategory:
+      type: string
+      enum: [XL, free, paid_20, paid_35]
+
+    SeatPhysicalType:
+      type: string
+      enum: [window, middle, aisle]
+
+    SeatRowType:
+      type: string
+      enum: [seat, galley, toilet, exit]
+
+    SeatStatus:
+      type: string
+      enum: [available, taken, selected]
+
+    SeatLegendItem:
+      type: object
+      properties:
+        category:
+          type: string
+          enum: [XL, free, paid_20, paid_35, taken]
+        label:
+          type: string
+        style:
+          type: string
+          enum: [black_fill, white_border, gray_fill]
+      required: [category, label, style]
+
+    SeatAvailability:
+      type: object
+      properties:
+        exists:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/SeatStatus'
+        physical:
+          $ref: '#/components/schemas/SeatPhysicalType'
+        category:
+          $ref: '#/components/schemas/SeatCategory'
+        price:
+          type: number
+        label:
+          type: string
+          nullable: true
+        features:
+          type: array
+          items:
+            type: string
+      required: [exists, status, physical, category, price, label, features]
+
+    SeatmapRow:
+      type: object
+      properties:
+        rowNumber:
+          type: integer
+        type:
+          $ref: '#/components/schemas/SeatRowType'
+        label:
+          type: string
+        seats:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/SeatAvailability'
+      required: [rowNumber, type, seats]
+
+    SeatmapResponseData:
+      type: object
+      properties:
+        flightId:
+          type: string
+          example: EK506
+        origin:
+          type: string
+          example: LHR
+        destination:
+          type: string
+          example: DXB
+        aircraftType:
+          type: string
+          example: A320
+        columns:
+          type: array
+          items:
+            type: string
+        aisleAfter:
+          type: array
+          items:
+            type: string
+        currency:
+          type: string
+          example: GBP
+        legend:
+          type: array
+          items:
+            $ref: '#/components/schemas/SeatLegendItem'
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/SeatmapRow'
+      required: [flightId, origin, destination, aircraftType, columns, aisleAfter, currency, legend, rows]
+
+    FlightSearchRequest:
+      type: object
+      properties:
+        fromAirportCode:
+          type: string
+          example: LHR
+        toAirportCode:
+          type: string
+          example: DXB
+        departureDate:
+          type: string
+          format: date
+          example: 2026-05-10
+        passengers:
+          type: object
+          properties:
+            adults:
+              type: integer
+              minimum: 1
+              example: 1
+            children:
+              type: integer
+              minimum: 0
+              example: 0
+            infants:
+              type: integer
+              minimum: 0
+              example: 0
+          required: [adults]
+        cabinClass:
+          $ref: '#/components/schemas/CabinClassInt'
+        directOnly:
+          type: boolean
+          example: false
+        preferredAirlineCode:
+          type: string
+          nullable: true
+          example: BA
+        currency:
+          type: string
+          example: GBP
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          example: 20
+        pageToken:
+          type: string
+          nullable: true
+      required: [fromAirportCode, toAirportCode, departureDate, passengers, cabinClass]
+
+    FlightSearchResponseData:
+      type: object
+      properties:
+        searchId:
+          type: string
+          format: uuid
+        flights:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlightSearchResultItem'
+        nextPageToken:
+          type: string
+          nullable: true
+      required: [searchId, flights, nextPageToken]
+
+    FlightSearchResultItem:
+      type: object
+      properties:
+        flightId:
+          type: string
+          format: uuid
+        routeDateKey:
+          type: string
+          example: LHR#DXB#2026-05-10
+        departureEpoch:
+          type: integer
+          example: 1778392200
+        expiresAt:
+          type: integer
+          example: 1778651400
+        airline:
+          type: object
+          properties:
+            code: { type: string, example: BA }
+            name: { type: string, example: British Airways }
+            flightNumber: { type: string, example: BA107 }
+            aircraft:
+              type: string
+              nullable: true
+              example: Airbus A380
+            logoUrl:
+              type: string
+              nullable: true
+          required: [code, name, flightNumber, aircraft, logoUrl]
+        timing:
+          type: object
+          properties:
+            departureTimeLocal: { type: string, example: "08:30" }
+            arrivalTimeLocal: { type: string, example: "08:30" }
+            totalDurationMinutes: { type: integer, example: 860 }
+            from:
+              type: object
+              properties:
+                airportCode: { type: string, example: LHR }
+                airportName: { type: string, example: London Heathrow }
+                terminal:
+                  type: string
+                  nullable: true
+                  example: "5"
+              required: [airportCode, airportName, terminal]
+            to:
+              type: object
+              properties:
+                airportCode: { type: string, example: DXB }
+                airportName: { type: string, example: Dubai International }
+                terminal:
+                  type: string
+                  nullable: true
+                  example: "1"
+              required: [airportCode, airportName, terminal]
+          required: [departureTimeLocal, arrivalTimeLocal, totalDurationMinutes, from, to]
+        stops:
+          type: object
+          properties:
+            count:
+              type: integer
+              minimum: 0
+            stopType:
+              $ref: '#/components/schemas/StopTypeInt'
+            layovers:
+              type: array
+              items:
+                type: object
+                properties:
+                  airportCode: { type: string, example: SFO }
+                  airportName: { type: string, example: San Francisco International }
+                  durationMinutes: { type: integer, example: 310 }
+                required: [airportCode, airportName, durationMinutes]
+          required: [count, stopType, layovers]
+        selectedFare:
+          type: object
+          properties:
+            fareClassCode: { type: string, example: STANDARD }
+            cabinClass:
+              $ref: '#/components/schemas/CabinClassInt'
+            price:
+              type: object
+              properties:
+                amount: { type: number, example: 2140 }
+                currency: { type: string, example: GBP }
+                perPerson: { type: boolean, example: true }
+              required: [amount, currency, perPerson]
+            benefits:
+              type: object
+              properties:
+                bags: { type: string, example: 3x23kg }
+                loungeAccess: { type: boolean, example: true }
+                seatSelection: { type: boolean, example: true }
+                priorityBoarding: { type: boolean, example: true }
+          required: [fareClassCode, cabinClass, price, benefits]
+        policies:
+          type: object
+          properties:
+            inPolicy: { type: boolean, example: true }
+            refundability:
+              $ref: '#/components/schemas/RefundabilityInt'
+          required: [inPolicy, refundability]
+        extrasPreview:
+          type: array
+          items:
+            type: object
+            properties:
+              extraType: { type: string, example: trip_protection }
+              pricingModel:
+                $ref: '#/components/schemas/PricingModelInt'
+              amount: { type: number, example: 34 }
+              currency: { type: string, example: GBP }
+            required: [extraType, pricingModel, amount, currency]
+      required: [flightId, routeDateKey, departureEpoch, airline, timing, stops, selectedFare, policies, extrasPreview, expiresAt]
+
+    FlightFareOptionItem:
+      type: object
+      properties:
+        fareClassCode:
+          type: string
+          example: STANDARD
+        cabinClass:
+          $ref: '#/components/schemas/CabinClassInt'
+        price:
+          type: object
+          properties:
+            amount: { type: number, example: 2140 }
+            currency: { type: string, example: GBP }
+            perPerson: { type: boolean, example: true }
+          required: [amount, currency, perPerson]
+        benefits:
+          type: object
+          properties:
+            bags: { type: string, example: 3x23kg }
+            loungeAccess: { type: boolean, example: true }
+            seatSelection: { type: boolean, example: true }
+            priorityBoarding: { type: boolean, example: true }
+        refundability:
+          $ref: '#/components/schemas/RefundabilityInt'
+        isDefault:
+          type: boolean
+          example: true
+        tax:
+          type: number
+          example: 0
+      required: [fareClassCode, cabinClass, price, benefits, refundability, isDefault, tax]
+
+    FlightFareOptionsResponseData:
+      type: object
+      properties:
+        flightId:
+          type: string
+          format: uuid
+        fareOptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlightFareOptionItem'
+      required: [flightId, fareOptions]
+
+    FlightPopulateResponseData:
+      type: object
+      properties:
+        offersInserted:
+          type: integer
+          minimum: 0
+          example: 2
+        fareOptionsInserted:
+          type: integer
+          minimum: 0
+          example: 4
+        extrasInserted:
+          type: integer
+          minimum: 0
+          example: 4
+      required: [offersInserted, fareOptionsInserted, extrasInserted]
+
+    FlightPopulateRequest:
+      type: object
+      properties:
+        offers:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/FlightSearchResultItem'
+        fareOptions:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/FlightFareOptionItem'
+              - type: object
+                properties:
+                  flightId:
+                    type: string
+                    format: uuid
+                required: [flightId]
+        extras:
+          type: array
+          items:
+            type: object
+            properties:
+              flightId:
+                type: string
+                format: uuid
+              extraType:
+                type: string
+              pricingModel:
+                $ref: '#/components/schemas/PricingModelInt'
+              amount:
+                type: number
+              currency:
+                type: string
+              expiresAt:
+                type: integer
+            required: [flightId, extraType, pricingModel, amount, currency, expiresAt]
+      required: [offers, fareOptions, extras]
+
+    FlightAddonsCatalogRequest:
+      type: object
+      properties:
+        flightIds:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: string
+            format: uuid
+      required: [flightIds]
+
+    AddonQuantityBounds:
+      type: object
+      properties:
+        min: { type: integer, minimum: 0, example: 0 }
+        max: { type: integer, minimum: 1, example: 6 }
+        step: { type: integer, minimum: 1, example: 1 }
+      required: [min, max, step]
+
+    AddonCatalogItem:
+      type: object
+      properties:
+        id: { type: string, example: extra_bag_5kg }
+        extraType: { type: string, example: extra_bag_5kg }
+        title: { type: string, example: "+5 kg" }
+        subtitle: { type: string, example: Extra bag }
+        pricingModel:
+          $ref: '#/components/schemas/PricingModelInt'
+        unitPrice: { type: number, example: 35 }
+        currency: { type: string, example: GBP }
+        selectionType:
+          type: string
+          enum: [toggle, quantity]
+        quantity:
+          $ref: '#/components/schemas/AddonQuantityBounds'
+        features:
+          type: array
+          items: { type: string }
+      required: [id, extraType, title, subtitle, pricingModel, unitPrice, currency, selectionType]
+
+    AddonCategory:
+      type: object
+      properties:
+        category: { type: string, example: baggage }
+        label: { type: string, example: Baggage }
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AddonCatalogItem'
+      required: [category, label, items]
+
+    FlightLegSegment:
+      type: object
+      properties:
+        fromAirportCode: { type: string, example: LHR }
+        toAirportCode: { type: string, example: DXB }
+        departureDate: { type: string, format: date, example: "2026-06-12" }
+        departureEpoch: { type: integer, example: 1781246400 }
+      required: [fromAirportCode, toAirportCode, departureDate, departureEpoch]
+
+    FlightLegAddonsCatalog:
+      type: object
+      properties:
+        flightId:
+          type: string
+          format: uuid
+        segment:
+          $ref: '#/components/schemas/FlightLegSegment'
+        currency: { type: string, example: GBP }
+        included:
+          type: object
+          properties:
+            baggageAllowanceSummary:
+              type: string
+              example: 23 kg checked baggage included per person with your fare
+            source:
+              type: string
+              example: fare_benefits
+          required: [baggageAllowanceSummary, source]
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/AddonCategory'
+      required: [flightId, segment, currency, included, categories]
+
+    FlightAddonsCatalogResponseData:
+      type: object
+      properties:
+        byFlightId:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/FlightLegAddonsCatalog'
+      required: [byFlightId]
+
+    SignupRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          minLength: 8
+          description: Must contain at least 1 uppercase letter and 1 number.
+          example: SecurePass1
+        name:
+          type: string
+          minLength: 1
+          example: John Doe
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          example: SecurePass1
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+
+    ResetPasswordRequest:
+      type: object
+      required: [resetToken, newPassword]
+      properties:
+        resetToken:
+          type: string
+          format: uuid
+          description: The token value from the ?token= query parameter in the reset link.
+          example: f47ac10b-58cc-4372-a567-0e02b2c3d479
+        newPassword:
+          type: string
+          minLength: 8
+          description: Must contain at least 1 uppercase letter and 1 number.
+          example: NewSecurePass1
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken, userId]
+      properties:
+        refreshToken:
+          type: string
+          format: uuid
+          description: The refresh token from /auth/login or the previous /auth/refresh response.
+          example: f47ac10b-58cc-4372-a567-0e02b2c3d479
+        userId:
+          type: string
+          format: uuid
+          description: The userId from the /auth/login response.
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+    SignupData:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+      required: [userId, email, name]
+
+    ForgotPasswordData:
+      type: object
+      properties:
+        message:
+          type: string
+          example: If that email exists, a reset link has been sent
+      required: [message]
+
+    ResetPasswordData:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Password reset successfully
+      required: [message]
+
+    LogoutData:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Logged out successfully
+      required: [message]
+
+    BootstrapAdminRequest:
+      type: object
+      required: [bootstrapSecret, email]
+      properties:
+        bootstrapSecret:
+          type: string
+          description: Must match deploy-time ADMIN_BOOTSTRAP_SECRET (CDK context adminBootstrapSecret).
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          description: When set with name, creates a new admin user.
+        name:
+          type: string
+          description: Required when password is set.
+
+    BootstrapAdminResult:
+      type: object
+      required: [userId, email, role, mode]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+        mode:
+          type: string
+          enum: [created, promoted]
+
+    Customer:
+      type: object
+      required:
+        - customerId
+        - customerCode
+        - companyName
+        - industry
+        - primaryEmail
+        - contactName
+        - status
+        - createdByUserId
+        - createdAt
+        - updatedAt
+      properties:
+        customerId:
+          type: string
+          format: uuid
+          description: DynamoDB partition key (UUID v4). Use this value in `/v1/themes/{customerId}`.
+          example: a1b2c3d4-e5f6-4789-a012-3456789abcde
+        customerCode:
+          type: string
+          description: Unique human-readable tenant slug (2–15 uppercase A–Z / 0–9 when suffixed).
+          example: AIRXYZ
+        companyName:
+          type: string
+        industry:
+          type: string
+        primaryEmail:
+          type: string
+          format: email
+        contactName:
+          type: string
+        status:
+          type: string
+          enum: [active, churned]
+        createdByUserId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCustomerRequest:
+      type: object
+      required: [companyName, industry, primaryEmail, contactName]
+      example:
+        companyName: Air XYZ Ltd
+        industry: aviation
+        primaryEmail: ops@airxyz.com
+        contactName: John Smith
+      properties:
+        companyName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        industry:
+          type: string
+          minLength: 1
+          maxLength: 60
+        primaryEmail:
+          type: string
+          format: email
+        contactName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        customerCode:
+          type: string
+          minLength: 1
+          maxLength: 10
+          description: >
+            Optional. Letters and digits (normalized to uppercase A–Z, 0–9). Must be 2–10 characters after normalization.
+            If omitted, derived from companyName. If taken, the next free code is allocated.
+
+    UpdateCustomerRequest:
+      type: object
+      minProperties: 1
+      description: Partial update — include at least one property.
+      properties:
+        customerCode:
+          type: string
+          minLength: 1
+          maxLength: 10
+          description: >
+            Normalized to uppercase A–Z and digits; 2–10 characters. Must remain unique across customers (409 if taken).
+        companyName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        industry:
+          type: string
+          minLength: 1
+          maxLength: 60
+        primaryEmail:
+          type: string
+          format: email
+        contactName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        status:
+          type: string
+          enum: [active, churned]
+          description: Set to churned to mark inactive, or active to reactivate a churned customer.
+
+    UpdateUserRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          $ref: '#/components/schemas/UserRole'
+
+    ThemeTokenMap:
+      type: object
+      additionalProperties:
+        type: string
+      description: Map of design token key to hex color (#RRGGBB or #RRGGBBAA).
+
+    ThemeFontFamilyMap:
+      type: object
+      additionalProperties:
+        type: string
+        minLength: 1
+        maxLength: 100
+      description: >
+        Font family overrides. Keys must be one of primary, secondary, mono (see server defaults).
+        Values are non-empty font family names (max 100 characters).
+
+    ThemeFontSizeMap:
+      type: object
+      additionalProperties:
+        type: number
+        minimum: 8
+        maximum: 96
+      description: >
+        Font size overrides in logical pixels. Keys must match server-supported size slots
+        (e.g. displayLarge, bodyMedium). Values must be between 8 and 96.
+
+    ThemeFontTokens:
+      type: object
+      required: [families, sizes]
+      properties:
+        families:
+          $ref: '#/components/schemas/ThemeFontFamilyMap'
+        sizes:
+          $ref: '#/components/schemas/ThemeFontSizeMap'
+      description: >
+        Fully resolved font tokens (default families and sizes merged with theme overrides).
+
+    ThemeResponse:
+      type: object
+      required:
+        - customerId
+        - themeId
+        - themeName
+        - isActive
+        - version
+        - isDefault
+        - createdAt
+        - updatedAt
+        - tokens
+        - font_tokens
+      properties:
+        customerId:
+          type: string
+          format: uuid
+          description: Echoes the tenant id from the request path (UUID).
+        themeId:
+          type: string
+          minLength: 1
+          description: >
+            Stored themes use a UUID. The public GET active-theme response may use the literal `default`
+            when no theme row exists (synthetic default payload).
+          pattern: '^(default|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$'
+        themeName:
+          type: string
+        isActive:
+          type: boolean
+        version:
+          type: integer
+        isDefault:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        tokens:
+          $ref: '#/components/schemas/ThemeTokenMap'
+        font_tokens:
+          $ref: '#/components/schemas/ThemeFontTokens'
+
+    ThemeListItem:
+      type: object
+      required:
+        - themeId
+        - themeName
+        - isActive
+        - version
+        - createdAt
+        - updatedAt
+        - overrideCount
+      properties:
+        themeId:
+          type: string
+        themeName:
+          type: string
+        isActive:
+          type: boolean
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        overrideCount:
+          type: integer
+          description: Number of token keys overridden from the default theme.
+
+    CreateThemeRequest:
+      type: object
+      required: [themeName]
+      properties:
+        themeName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        tokens:
+          $ref: '#/components/schemas/ThemeTokenMap'
+        fontFamilies:
+          $ref: '#/components/schemas/ThemeFontFamilyMap'
+        fontSizes:
+          $ref: '#/components/schemas/ThemeFontSizeMap'
+
+    UpdateThemeRequest:
+      type: object
+      properties:
+        themeName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        tokens:
+          $ref: '#/components/schemas/ThemeTokenMap'
+        fontFamilies:
+          $ref: '#/components/schemas/ThemeFontFamilyMap'
+        fontSizes:
+          $ref: '#/components/schemas/ThemeFontSizeMap'
+
+    EmptyObject:
+      type: object
+      additionalProperties: false
+
+    CartStatus:
+      type: string
+      enum: [active, expired, abandoned, converted]
+
+    PassengerType:
+      type: string
+      enum: [adult, child, infant]
+
+    AddonType:
+      type: string
+      enum: [seat, meal, baggage, trip_protect]
+
+    FareInclusions:
+      type: object
+      required: [cabinBaggage, checkedBaggage, refundable, changeable, changeFee, meal, seat]
+      properties:
+        cabinBaggage:
+          type: string
+          example: 7kg
+        checkedBaggage:
+          type: string
+          example: 23kg
+        refundable:
+          type: boolean
+        changeable:
+          type: boolean
+        changeFee:
+          type: number
+          example: 0
+        meal:
+          type: boolean
+        seat:
+          type: string
+          enum: [included, chargeable]
+
+    Cart:
+      type: object
+      required:
+        - cartId
+        - userId
+        - status
+        - currency
+        - passengerCount
+        - totalAmount
+        - createdAt
+        - updatedAt
+        - expiresAt
+      properties:
+        cartId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/CartStatus'
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: GBP
+        passengerCount:
+          type: integer
+          minimum: 1
+        totalAmount:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: integer
+          description: Epoch seconds — DynamoDB TTL attribute
+          example: 1781246400
+
+    CartLeg:
+      type: object
+      required:
+        - cartId
+        - legId
+        - legOrder
+        - flightId
+        - origin
+        - destination
+        - departureAt
+        - arrivalAt
+        - fareClass
+        - fareName
+        - basePrice
+        - fareInclusions
+      properties:
+        cartId:
+          type: string
+          format: uuid
+        legId:
+          type: string
+          format: uuid
+        legOrder:
+          type: integer
+          minimum: 0
+          description: 0 = outbound, 1 = return
+        flightId:
+          type: string
+        origin:
+          type: string
+        destination:
+          type: string
+        departureAt:
+          type: string
+          format: date-time
+        arrivalAt:
+          type: string
+          format: date-time
+        fareClass:
+          type: string
+        fareName:
+          type: string
+        basePrice:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+        fareInclusions:
+          $ref: '#/components/schemas/FareInclusions'
+
+    CartPassenger:
+      type: object
+      required:
+        - cartId
+        - passengerId
+        - passengerIndex
+        - passengerType
+        - title
+        - firstName
+        - lastName
+        - dob
+        - nationality
+        - passportNo
+      properties:
+        cartId:
+          type: string
+          format: uuid
+        passengerId:
+          type: string
+          format: uuid
+        passengerIndex:
+          type: integer
+          minimum: 0
+        passengerType:
+          $ref: '#/components/schemas/PassengerType'
+        title:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        dob:
+          type: string
+          format: date
+        nationality:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: ISO 3166-1 alpha-2
+        passportNo:
+          type: string
+
+    SeatAddonDetails:
+      type: object
+      required: [seatNumber, seatType, category]
+      properties:
+        seatNumber:
+          type: string
+          example: 4D
+        seatType:
+          type: string
+          example: window
+        category:
+          type: string
+          example: XL
+
+    MealAddonDetails:
+      type: object
+      required: [mealCode, mealName]
+      properties:
+        mealCode:
+          type: string
+          example: VGML
+        mealName:
+          type: string
+          example: Vegetarian Meal
+
+    BaggageAddonDetails:
+      type: object
+      required: [weightKg, pieces, baggageType]
+      properties:
+        weightKg:
+          type: number
+        pieces:
+          type: integer
+          minimum: 1
+        baggageType:
+          type: string
+          enum: [checked, cabin]
+
+    TripProtectAddonDetails:
+      type: object
+      required: [planName, coverageAmount, coverageCurrency]
+      properties:
+        planName:
+          type: string
+        coverageAmount:
+          type: number
+        coverageCurrency:
+          type: string
+
+    AddonDetails:
+      oneOf:
+        - $ref: '#/components/schemas/SeatAddonDetails'
+        - $ref: '#/components/schemas/MealAddonDetails'
+        - $ref: '#/components/schemas/BaggageAddonDetails'
+        - $ref: '#/components/schemas/TripProtectAddonDetails'
+
+    CartAddon:
+      type: object
+      required: [cartId, addonId, type, passengerId, legId, price, currency, addedAt, details]
+      properties:
+        cartId:
+          type: string
+          format: uuid
+        addonId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/AddonType'
+        passengerId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null for trip_protect
+        legId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null for trip_protect
+        price:
+          type: number
+        currency:
+          type: string
+        addedAt:
+          type: string
+          format: date-time
+        details:
+          $ref: '#/components/schemas/AddonDetails'
+
+    CreateCartLegRequest:
+      type: object
+      required:
+        - flightId
+        - legOrder
+        - fareClass
+        - fareName
+        - basePrice
+        - departureAt
+        - arrivalAt
+        - fareInclusions
+      properties:
+        flightId:
+          type: string
+        legOrder:
+          type: integer
+          minimum: 0
+        fareClass:
+          type: string
+        fareName:
+          type: string
+        basePrice:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+        departureAt:
+          type: string
+          format: date-time
+        arrivalAt:
+          type: string
+          format: date-time
+        fareInclusions:
+          $ref: '#/components/schemas/FareInclusions'
+
+    CreateCartPassengerRequest:
+      type: object
+      required:
+        - passengerIndex
+        - passengerType
+        - title
+        - firstName
+        - lastName
+        - dob
+        - nationality
+        - passportNo
+      properties:
+        passengerIndex:
+          type: integer
+          minimum: 0
+        passengerType:
+          $ref: '#/components/schemas/PassengerType'
+        title:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        dob:
+          type: string
+          format: date
+        nationality:
+          type: string
+          minLength: 2
+          maxLength: 2
+        passportNo:
+          type: string
+
+    CreateCartRequest:
+      type: object
+      required: [currency, legs, passengers]
+      properties:
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        legs:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/CreateCartLegRequest'
+        passengers:
+          type: array
+          minItems: 1
+          maxItems: 9
+          items:
+            $ref: '#/components/schemas/CreateCartPassengerRequest'
+
+    CartDetailResponseData:
+      type: object
+      required: [cart, legs, passengers, addons]
+      properties:
+        cart:
+          $ref: '#/components/schemas/Cart'
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartLeg'
+        passengers:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartPassenger'
+        addons:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartAddon'
+
+    CartListItem:
+      type: object
+      required:
+        - cartId
+        - status
+        - currency
+        - totalAmount
+        - passengerCount
+        - legCount
+        - createdAt
+        - expiresAt
+        - legs
+      properties:
+        cartId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/CartStatus'
+        currency:
+          type: string
+        totalAmount:
+          type: number
+        passengerCount:
+          type: integer
+        legCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: integer
+          description: Epoch seconds
+        legs:
+          type: array
+          items:
+            type: object
+            required: [origin, destination, departureAt, legOrder]
+            properties:
+              origin:
+                type: string
+              destination:
+                type: string
+              departureAt:
+                type: string
+                format: date-time
+              legOrder:
+                type: integer
+
+    ReplaceLegRequest:
+      type: object
+      required:
+        - flightId
+        - fareClass
+        - fareName
+        - basePrice
+        - departureAt
+        - arrivalAt
+        - fareInclusions
+      properties:
+        flightId:
+          type: string
+        fareClass:
+          type: string
+        fareName:
+          type: string
+        basePrice:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+        departureAt:
+          type: string
+          format: date-time
+        arrivalAt:
+          type: string
+          format: date-time
+        fareInclusions:
+          $ref: '#/components/schemas/FareInclusions'
+
+    RemoveLegResultData:
+      type: object
+      required: [updatedLeg, deletedAddons]
+      properties:
+        updatedLeg:
+          $ref: '#/components/schemas/CartLeg'
+        deletedAddons:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartAddon'
+
+    AddPassengerRequest:
+      type: object
+      required:
+        - passengerType
+        - title
+        - firstName
+        - lastName
+        - dob
+        - nationality
+        - passportNo
+      properties:
+        passengerType:
+          $ref: '#/components/schemas/PassengerType'
+        title:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        dob:
+          type: string
+          format: date
+        nationality:
+          type: string
+          minLength: 2
+          maxLength: 2
+        passportNo:
+          type: string
+
+    RemovePassengerResultData:
+      type: object
+      required: [deletedPassengerId, deletedAddons]
+      properties:
+        deletedPassengerId:
+          type: string
+          format: uuid
+        deletedAddons:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartAddon'
+
+    AddAddonRequest:
+      type: object
+      required: [type, price, currency, details]
+      properties:
+        type:
+          $ref: '#/components/schemas/AddonType'
+        passengerId:
+          type: string
+          format: uuid
+          description: Required for seat, meal, baggage; omit for trip_protect
+        legId:
+          type: string
+          format: uuid
+          description: Required for seat, meal, baggage; omit for trip_protect
+        price:
+          type: number
+        currency:
+          type: string
+        details:
+          $ref: '#/components/schemas/AddonDetails'
