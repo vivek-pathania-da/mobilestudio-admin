@@ -8,14 +8,21 @@ import {
 } from '@/lib/auth';
 import type { ApiSuccess, RefreshResult } from '@/types/api';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+/** Inlined at build time; may be empty during local/CI build without .env — do not throw at import (breaks SSG/prerender). */
+function getBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_API_URL ?? '';
+}
 
-if (!BASE_URL) {
-  throw new Error('NEXT_PUBLIC_API_URL is not set');
+const BASE_URL = getBaseUrl();
+
+if (process.env.NODE_ENV === 'development' && !BASE_URL) {
+  console.warn(
+    '[api] NEXT_PUBLIC_API_URL is not set — API calls will fail until it is configured.'
+  );
 }
 
 export const apiClient = axios.create({
-  baseURL: BASE_URL,
+  baseURL: BASE_URL || undefined,
   headers: { 'Content-Type': 'application/json' },
   timeout: 15000,
 });
