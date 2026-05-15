@@ -7,7 +7,9 @@ import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, Loader2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
+import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { customersApi } from '@/lib/api/customers.api';
 import { themesApi } from '@/lib/api/themes.api';
 import { getApiErrorMessage } from '@/lib/api/client';
@@ -57,6 +59,7 @@ export function ThemeEditorShell({
   const fontSizeOverrides = useThemeEditorStore((s) => s.fontSizeOverrides);
 
   const [editingName, setEditingName] = useState(false);
+  const { confirm, dialogProps } = useConfirmDialog();
 
   useEffect(() => {
     initRef.current = false;
@@ -92,7 +95,14 @@ export function ThemeEditorShell({
   };
 
   const handleActivate = async () => {
-    if (!window.confirm('Activate this theme for the customer?')) return;
+    const ok = await confirm({
+      title: 'Activate this theme?',
+      description:
+        'This theme will become the active theme for the customer mobile app.',
+      confirmLabel: 'Activate',
+      variant: 'default',
+    });
+    if (!ok) return;
     try {
       await activate();
       toast.success('Theme activated');
@@ -102,16 +112,28 @@ export function ThemeEditorShell({
     }
   };
 
-  const handleDiscard = () => {
+  const handleDiscard = async () => {
     if (!isDirty) return;
-    if (!window.confirm('Discard unsaved changes?')) return;
+    const ok = await confirm({
+      title: 'Discard unsaved changes?',
+      description: 'Your edits will be lost and cannot be recovered.',
+      confirmLabel: 'Discard',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     discard();
     void themeQuery.refetch();
     router.back();
   };
 
-  const handleResetAll = () => {
-    if (!window.confirm('Reset all overrides to defaults?')) return;
+  const handleResetAll = async () => {
+    const ok = await confirm({
+      title: 'Reset all overrides?',
+      description: 'All token overrides will be cleared back to defaults.',
+      confirmLabel: 'Reset all',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     resetAll();
   };
 
@@ -120,7 +142,7 @@ export function ThemeEditorShell({
       <div className="flex h-screen flex-col bg-[#F9FAFB]">
         <div className="h-14 shrink-0 animate-pulse border-b bg-white" />
         <div className="flex flex-1 gap-0">
-          <div className="w-[260px] shrink-0 animate-pulse bg-[#111827]" />
+          <div className="w-[260px] shrink-0 animate-pulse border-r border-border bg-white" />
           <div className="flex-1 animate-pulse bg-[#F3F4F6]" />
           <div className="w-80 shrink-0 animate-pulse bg-white" />
         </div>
@@ -145,23 +167,24 @@ export function ThemeEditorShell({
     Object.keys(fontSizeOverrides).length;
 
   return (
+    <>
     <div className="flex h-screen flex-col overflow-hidden bg-white">
-      <header className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 border-b border-[#E2E8F0] bg-white px-6">
+      <header className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 border-b border-border bg-white px-6">
         <div className="flex min-w-0 items-center gap-2 text-sm">
-          <Link href="/customers" className="text-[#6B7280] hover:text-[#0F172A]">
+          <Link href="/customers" className="text-[#6B7280] hover:text-foreground">
             Customers
           </Link>
           <ChevronRight className="size-3.5 shrink-0 text-[#9CA3AF]" />
           <Link
             href={`/customers/${customerId}`}
-            className="truncate text-[#6B7280] hover:text-[#0F172A]"
+            className="truncate text-[#6B7280] hover:text-foreground"
           >
             {displayCustomerName}
           </Link>
           <ChevronRight className="size-3.5 shrink-0 text-[#9CA3AF]" />
           <Link
             href={`/customers/${customerId}`}
-            className="text-[#6B7280] hover:text-[#0F172A]"
+            className="text-[#6B7280] hover:text-foreground"
           >
             Themes
           </Link>
@@ -171,7 +194,7 @@ export function ThemeEditorShell({
           {!editingName ? (
             <button
               type="button"
-              className="flex max-w-[min(100vw,24rem)] items-center gap-1.5 truncate text-base font-semibold text-[#0F172A]"
+              className="flex max-w-[min(100vw,24rem)] items-center gap-1.5 truncate text-base font-semibold text-foreground"
               onClick={() => setEditingName(true)}
             >
               <span className="truncate">{themeName}</span>
@@ -200,17 +223,17 @@ export function ThemeEditorShell({
           <button
             type="button"
             className="text-[13px] font-medium text-[#DC2626] hover:underline"
-            onClick={handleResetAll}
+            onClick={() => void handleResetAll()}
           >
             Reset all
           </button>
-          <span className="h-6 w-px bg-[#E2E8F0]" />
+          <span className="h-6 w-px bg-border" />
           <Button
             type="button"
             variant="outline"
             size="sm"
             disabled={!isDirty}
-            onClick={handleDiscard}
+            onClick={() => void handleDiscard()}
           >
             Discard
           </Button>
@@ -218,7 +241,7 @@ export function ThemeEditorShell({
             type="button"
             variant="outline"
             size="sm"
-            className="border-[#2563EB] text-[#2563EB] hover:bg-blue-50"
+            className="border-border text-foreground hover:bg-muted"
             disabled={!isDirty || isSaving}
             onClick={() => void handleSave()}
           >
@@ -232,14 +255,14 @@ export function ThemeEditorShell({
             )}
           </Button>
           {isActive ? (
-            <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+            <span className="rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground">
               Active
             </span>
           ) : (
             <Button
               type="button"
               size="sm"
-              className="bg-emerald-600 font-medium text-white hover:bg-emerald-700"
+              className="bg-primary font-medium text-primary-foreground hover:bg-[var(--color-primary-hover)]"
               onClick={() => void handleActivate()}
             >
               Activate
@@ -251,14 +274,16 @@ export function ThemeEditorShell({
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <CategoryNav />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#F9FAFB] p-6">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[#E2E8F0] bg-white shadow-sm">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-white shadow-sm">
             <TokenList />
           </div>
         </div>
-        <div className="h-full min-h-0 w-80 shrink-0 overflow-y-auto border-l border-[#E2E8F0] bg-white">
+        <div className="h-full min-h-0 w-80 shrink-0 overflow-y-auto border-l border-border bg-white">
           <ColourEditorPanel />
         </div>
       </div>
     </div>
+    {dialogProps ? <ConfirmDialog {...dialogProps} /> : null}
+    </>
   );
 }

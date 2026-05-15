@@ -2,17 +2,17 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 import {
   Bell,
   Building2,
   CircleHelp,
   LayoutDashboard,
   LogOut,
-  Plus,
   Users,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth.store';
 
@@ -35,6 +35,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   return (
     <div className="flex min-h-screen w-full">
@@ -49,7 +50,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       >
         <div className="flex items-center gap-2 px-4 pb-6">
           <div
-            className="flex size-8 items-center justify-center rounded-lg text-xs font-bold text-white"
+            className="flex size-8 items-center justify-center rounded-full text-xs font-bold text-white"
             style={{ backgroundColor: 'var(--color-primary)' }}
           >
             MS
@@ -73,9 +74,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 key={href}
                 href={href}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  'flex items-center gap-2 rounded-none px-3 py-2 text-sm font-medium transition-colors',
                   active
-                    ? 'bg-white/10 text-white'
+                    ? 'bg-[var(--color-sidebar-hover)] text-[var(--color-sidebar-foreground)]'
                     : 'text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-hover)] hover:text-[var(--color-sidebar-foreground)]'
                 )}
               >
@@ -87,19 +88,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="mt-auto flex flex-col gap-2 px-2 pt-4">
-          <Button
-            className="w-full justify-center gap-2 font-semibold"
-            style={{
-              backgroundColor: 'var(--color-primary)',
-              color: 'var(--color-primary-foreground)',
-            }}
-          >
-            <Plus className="size-4" />
-            New Project
-          </Button>
           <button
             type="button"
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--color-sidebar-hover)]"
+            className="flex items-center gap-2 rounded-none px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--color-sidebar-hover)]"
             style={{ color: 'var(--color-sidebar-muted)' }}
           >
             <CircleHelp className="size-4" />
@@ -107,8 +98,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           </button>
           <button
             type="button"
-            onClick={() => void logout()}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--color-sidebar-hover)]"
+            onClick={() => setLogoutOpen(true)}
+            className="flex items-center gap-2 rounded-none px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--color-sidebar-hover)]"
             style={{ color: 'var(--color-sidebar-muted)' }}
           >
             <LogOut className="size-4" />
@@ -116,6 +107,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </aside>
+
+      <ConfirmDialog
+        open={logoutOpen}
+        onOpenChange={setLogoutOpen}
+        title="Sign out?"
+        description="You will need to sign in again to access the admin."
+        confirmLabel="Sign out"
+        variant="destructive"
+        onConfirm={() => logout()}
+      />
 
       {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">

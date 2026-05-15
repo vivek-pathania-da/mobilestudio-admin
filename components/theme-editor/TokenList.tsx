@@ -24,9 +24,9 @@ export function TokenList() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 flex-row items-center justify-between border-b border-[#E2E8F0] bg-white px-4 py-4">
+      <header className="flex shrink-0 flex-row items-center justify-between border-b border-border bg-white px-4 py-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold text-[#0F172A]">{category.label}</h2>
+          <h2 className="text-lg font-semibold text-foreground">{category.label}</h2>
           <span className="rounded-full bg-[#F1F5F9] px-2 py-0.5 font-mono text-[11px] text-[#64748B]">
             {count} tokens
           </span>

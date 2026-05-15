@@ -27,7 +27,7 @@ export function FontEditor() {
         <h3 className="mb-3 text-[10px] font-medium tracking-[0.2em] text-[#9CA3AF] uppercase">
           Font families
         </h3>
-        <div className="rounded-lg border border-[#E2E8F0] bg-white">
+        <div className="rounded-lg border border-border bg-white">
           {familyKeys.map((key) => {
             const value =
               fontFamilyOverrides[key] ?? DEFAULT_FONT_FAMILIES[key] ?? '';
@@ -35,7 +35,7 @@ export function FontEditor() {
             return (
               <div
                 key={key}
-                className="flex h-11 items-center gap-3 border-b border-[#E2E8F0] px-3 last:border-b-0"
+                className="flex h-11 items-center gap-3 border-b border-border px-3 last:border-b-0"
               >
                 <span className="w-28 shrink-0 font-mono text-[13px] text-[#374151]">
                   {key}
@@ -45,12 +45,12 @@ export function FontEditor() {
                   value={value}
                   placeholder={DEFAULT_FONT_FAMILIES[key]}
                   onChange={(e) => setFontFamily(key, e.target.value)}
-                  className="min-w-0 flex-1 rounded-md border border-[#E2E8F0] px-3 py-1.5 font-mono text-[13px] focus:border-[#2563EB] focus:outline-none"
+                  className="min-w-0 flex-1 rounded-md border border-border px-3 py-1.5 font-mono text-[13px] focus:border-[var(--color-border-focus)] focus:outline-none"
                 />
                 <span
                   className={cn(
                     'size-2 shrink-0 rounded-full',
-                    modified ? 'bg-blue-500' : 'bg-transparent'
+                    modified ? 'bg-[#47CD89]' : 'bg-transparent'
                   )}
                 />
               </div>
@@ -59,7 +59,7 @@ export function FontEditor() {
         </div>
       </section>
 
-      <hr className="my-6 border-[#E2E8F0]" />
+      <hr className="my-6 border-border" />
 
       <section>
         <h3 className="mb-1 text-[10px] font-medium tracking-[0.2em] text-[#9CA3AF] uppercase">
@@ -76,7 +76,7 @@ export function FontEditor() {
             return (
               <div
                 key={key}
-                className="flex items-center gap-2 rounded-md border border-[#E2E8F0] bg-white p-2"
+                className="flex items-center gap-2 rounded-md border border-border bg-white p-2"
               >
                 <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[#6B7280]">
                   {key}
@@ -95,12 +95,12 @@ export function FontEditor() {
                       setFontSize(key, clampSize(n));
                     }
                   }}
-                  className="w-14 shrink-0 rounded-md border border-[#E2E8F0] px-1 py-1 text-center font-mono text-[13px] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="w-14 shrink-0 rounded-md border border-border px-1 py-1 text-center font-mono text-[13px] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
                 <div className="flex shrink-0 flex-col gap-0">
                   <button
                     type="button"
-                    className="text-[#6B7280] hover:text-[#0F172A]"
+                    className="text-[#6B7280] hover:text-foreground"
                     aria-label="Increase"
                     onClick={() => setFontSize(key, clampSize(value + 1))}
                   >
@@ -108,7 +108,7 @@ export function FontEditor() {
                   </button>
                   <button
                     type="button"
-                    className="text-[#6B7280] hover:text-[#0F172A]"
+                    className="text-[#6B7280] hover:text-foreground"
                     aria-label="Decrease"
                     onClick={() => setFontSize(key, clampSize(value - 1))}
                   >
@@ -118,7 +118,7 @@ export function FontEditor() {
                 <span
                   className={cn(
                     'ml-1 size-2 shrink-0 rounded-full',
-                    modified ? 'bg-blue-500' : 'bg-transparent'
+                    modified ? 'bg-[#47CD89]' : 'bg-transparent'
                   )}
                 />
               </div>

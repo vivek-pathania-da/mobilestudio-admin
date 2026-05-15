@@ -39,9 +39,55 @@ export function isValidHex(value: string): boolean {
 
 export function isTransparent(hex: string): boolean {
   const h = hex.trim().toLowerCase();
-  if (h === '#00000000' || h === 'transparent') return true;
-  if (/^#[0-9a-f]{8}$/i.test(h) && h.endsWith('00')) return true;
+  if (h === 'transparent') return true;
+  if (/^#[0-9a-f]{8}$/i.test(h)) {
+    return hexToRgb(h).a === 0;
+  }
   return false;
+}
+
+/** Hex string for HexAlphaColorPicker (always 8-digit, preserves RGB when alpha is 0). */
+export function toPickerHex(value: string): string {
+  const trimmed = value.trim();
+  const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+  if (!isValidHex(withHash)) return '#000000FF';
+  const raw = withHash.slice(1).toUpperCase();
+  const rgb = raw.slice(0, 6);
+  const alpha = raw.length === 8 ? raw.slice(6, 8) : 'FF';
+  return `#${rgb}${alpha}`;
+}
+
+/** Normalize picker / user input for storage (#RRGGBB or #RRGGBBAA). */
+export function normalizeHexColor(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.toLowerCase() === 'transparent') {
+    return '#00000000';
+  }
+  const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+  if (!isValidHex(withHash)) return '#000000';
+  const raw = withHash.slice(1).toUpperCase();
+  if (raw.length === 8) {
+    const a = parseInt(raw.slice(6, 8), 16);
+    if (Number.isNaN(a) || a === 0) return `#${raw.slice(0, 6)}00`;
+    if (a === 255) return `#${raw.slice(0, 6)}`;
+    return `#${raw}`;
+  }
+  return `#${raw}`;
+}
+
+/** Set alpha to 0 while keeping RGB (or fallback RGB when legacy #00000000). */
+export function toFullyTransparentHex(
+  current: string,
+  fallbackRgb: string
+): string {
+  let { r, g, b } = hexToRgb(current);
+  if (r === 0 && g === 0 && b === 0) {
+    const fb = hexToRgb(fallbackRgb);
+    r = fb.r;
+    g = fb.g;
+    b = fb.b;
+  }
+  return rgbToHex(r, g, b, 0);
 }
 
 export function getDefaultValue(tokenKey: string): string {
@@ -99,4 +145,12 @@ export function getCategoryTokenCount(categoryId: string): number {
     (sum, s) => sum + s.tokens.length,
     0
   );
+}
+
+/** First colour token in a category (for default editor selection). */
+export function getFirstTokenKeyForCategory(categoryId: string): string | null {
+  if (categoryId === 'typography') return null;
+  const cat = TOKEN_CATEGORIES.find((c) => c.id === categoryId);
+  if (!cat) return null;
+  return cat.subcategories[0]?.tokens[0] ?? null;
 }

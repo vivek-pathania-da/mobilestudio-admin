@@ -1,38 +1,41 @@
 export const colors = {
   // Brand
-  primary: '#2563EB',
-  primaryHover: '#1D4ED8',
-  primaryForeground: '#F8FAFC',
+  primary: '#47CD89',
+  primaryHover: '#093227',
+  primaryForeground: '#FFFFFF',
+  primaryLight: '#E8F8F0',
 
   // Page
   pageBackground: '#F9FAFB',
   background: '#FFFFFF',
-  foreground: '#0F172A',
+  foreground: '#111827',
 
-  // Text scale
-  textPrimary: '#0F172A',
+  // Text scale — black, white, and gray only
+  textPrimary: '#111827',
   textSecondary: '#374151',
   textTertiary: '#6B7280',
   textDisabled: '#9CA3AF',
   textInverse: '#FFFFFF',
 
-  // Borders
-  border: '#E2E8F0',
-  borderStrong: '#CBD5E1',
-  borderFocus: '#2563EB',
+  // Borders — very light green (UI chrome); input surfaces stay gray
+  border: '#D9EDE5',
+  borderSoft: '#ECF6F1',
+  borderStrong: '#A8D9BC',
+  borderFocus: '#47CD89',
+  inputBorder: '#E2E8F0',
 
   // Surfaces
   card: '#FFFFFF',
   muted: '#F1F5F9',
   mutedForeground: '#64748B',
 
-  // Sidebar (dark)
-  sidebar: '#111827',
-  sidebarForeground: '#F9FAFB',
-  sidebarMuted: '#9CA3AF',
-  sidebarAccent: '#2563EB',
-  sidebarBorder: '#1F2937',
-  sidebarHover: '#1F2937',
+  // Sidebar — white with dark text
+  sidebar: '#FFFFFF',
+  sidebarForeground: '#111827',
+  sidebarMuted: '#6B7280',
+  sidebarAccent: '#47CD89',
+  sidebarBorder: '#E5E7EB',
+  sidebarHover: '#E8F8F0',
 
   // Status
   success: '#16A34A',
@@ -101,6 +104,11 @@ export const spacing = {
   16: '4rem', // 64px
 } as const;
 
+export const borderWidth = {
+  hairline: '0.5px',
+  thin: '1px',
+} as const;
+
 export const radii = {
   sm: '0.375rem', // 6px  — inputs, small elements
   md: '0.5rem', // 8px  — buttons, badges
@@ -140,38 +148,38 @@ export const animation = {
 export const statusConfig = {
   active: {
     label: 'Active',
-    color: 'text-green-700',
-    bg: 'bg-green-50',
-    border: 'border-green-200',
-    dot: 'bg-green-500',
+    color: 'text-primary-foreground',
+    bg: 'bg-primary',
+    border: 'border-primary',
+    dot: 'bg-primary-foreground',
   },
   trial: {
     label: 'Trial',
-    color: 'text-amber-700',
-    bg: 'bg-amber-50',
-    border: 'border-amber-200',
-    dot: 'bg-amber-500',
+    color: 'text-gray-700',
+    bg: 'bg-gray-50',
+    border: 'border-gray-200',
+    dot: 'bg-gray-500',
   },
   suspended: {
     label: 'Suspended',
-    color: 'text-red-700',
+    color: 'text-gray-700',
+    bg: 'bg-gray-50',
+    border: 'border-gray-200',
+    dot: 'bg-gray-500',
+  },
+  churned: {
+    label: 'Churned',
+    color: 'text-red-800',
     bg: 'bg-red-50',
     border: 'border-red-200',
     dot: 'bg-red-500',
   },
-  churned: {
-    label: 'Churned',
-    color: 'text-gray-600',
-    bg: 'bg-gray-100',
-    border: 'border-gray-200',
-    dot: 'bg-gray-400',
-  },
   admin: {
     label: 'Admin',
-    color: 'text-blue-700',
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
-    dot: 'bg-blue-500',
+    color: 'text-gray-700',
+    bg: 'bg-gray-50',
+    border: 'border-gray-200',
+    dot: 'bg-gray-500',
   },
   user: {
     label: 'User',

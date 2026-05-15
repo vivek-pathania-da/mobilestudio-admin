@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { customersApi } from '@/lib/api/customers.api';
@@ -278,45 +279,30 @@ export function ChurnCustomerDialog({
   const canChurn = customer?.status === 'active';
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" showCloseButton>
-        <DialogHeader>
-          <DialogTitle>Churn customer</DialogTitle>
-          <DialogDescription>
-            Calls <code className="text-xs">DELETE /v1/customers/{'{customerId}'}</code> to
-            soft-delete (status becomes <code className="text-xs">churned</code>). Repeating
-            returns 400.
-          </DialogDescription>
-        </DialogHeader>
-        {customer && (
-          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            <span className="font-medium">{customer.companyName}</span>
-            <span className="text-muted-foreground"> · {customer.customerCode}</span>
-          </p>
-        )}
-        {!canChurn ? (
-          <p className="text-sm text-muted-foreground">
-            Only active customers can be churned from here.
-          </p>
-        ) : (
-          <p className="text-sm text-destructive">
-            This action marks the tenant as churned. Continue?
-          </p>
-        )}
-        <DialogFooter className="gap-2 sm:justify-end">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={!canChurn || mutation.isPending}
-            onClick={() => mutation.mutate()}
-          >
-            {mutation.isPending ? 'Working…' : 'Churn customer'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Churn customer"
+      description="This marks the tenant as churned. Their mobile app will stop receiving theme updates."
+      confirmLabel="Churn customer"
+      variant="destructive"
+      disabled={!canChurn}
+      isLoading={mutation.isPending}
+      onConfirm={async () => {
+        await mutation.mutateAsync();
+      }}
+    >
+      {customer ? (
+        <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          <span className="font-medium">{customer.companyName}</span>
+          <span className="text-muted-foreground"> · {customer.customerCode}</span>
+        </p>
+      ) : null}
+      {!canChurn ? (
+        <p className="text-sm text-muted-foreground">
+          Only active customers can be churned.
+        </p>
+      ) : null}
+    </ConfirmDialog>
   );
 }

@@ -39,6 +39,10 @@ tags:
     description: Authentication endpoints
   - name: Admin
     description: Admin-only operations (requires JWT with role admin)
+  - name: Dashboard
+    description: >
+      Admin dashboard aggregates (customer/theme/user counts, recent customers).
+      Responses are cached in Lambda memory for 5 minutes per warm container.
   - name: Customers
     description: >
       Tenant registry (admin only). Each customer has a UUID `customerId` (primary key) and a unique
@@ -895,6 +899,78 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/dashboard/metrics:
+    get:
+      summary: Dashboard metrics (admin)
+      description: >
+        Returns aggregated customer, theme, and user statistics plus recent customers.
+        Requires a JWT with role `admin`. Responses are cached in the Lambda container
+        for 5 minutes (`cachedUntil` in the payload); subsequent calls within that window
+        return the cached snapshot.
+      tags: [Dashboard]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Dashboard metrics snapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DashboardMetrics'
+              example:
+                success: true
+                data:
+                  customers:
+                    total: 12
+                    active: 8
+                    trial: 2
+                    suspended: 1
+                    churned: 1
+                  themes:
+                    total: 18
+                    withActiveTheme: 10
+                    customersWithNoActiveTheme:
+                      - customerId: a1b2c3d4-e5f6-4789-a012-3456789abcde
+                        customerCode: AIRXYZ
+                        companyName: Air XYZ Ltd
+                        status: active
+                  users:
+                    admins: 3
+                    regularUsers: 844
+                    customers: 0
+                    total: 847
+                  recentCustomers:
+                    - customerId: a1b2c3d4-e5f6-4789-a012-3456789abcde
+                      customerCode: AIRXYZ
+                      companyName: Air XYZ Ltd
+                      industry: aviation
+                      status: active
+                      createdAt: '2026-05-14T07:27:46.941Z'
+                  generatedAt: '2026-05-15T09:00:00.000Z'
+                  cachedUntil: '2026-05-15T09:05:00.000Z'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: Forbidden
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -2476,6 +2552,9 @@ components:
         nextPageToken:
           type: string
           nullable: true
+        usedFallbackCurrency:
+          type: boolean
+          description: True when a currency was requested but no fares matched; results use other currencies.
       required: [searchId, flights, nextPageToken]
 
     FlightSearchResultItem:
@@ -2974,6 +3053,138 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    DashboardMetricsCustomerCounts:
+      type: object
+      required: [total, active, trial, suspended, churned]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: Sum of customers across all statuses.
+        active:
+          type: integer
+          minimum: 0
+        trial:
+          type: integer
+          minimum: 0
+        suspended:
+          type: integer
+          minimum: 0
+        churned:
+          type: integer
+          minimum: 0
+
+    DashboardCustomerWithoutActiveTheme:
+      type: object
+      required: [customerId, customerCode, companyName, status]
+      properties:
+        customerId:
+          type: string
+          format: uuid
+        customerCode:
+          type: string
+          example: AIRXYZ
+        companyName:
+          type: string
+        status:
+          type: string
+          description: Always `active` — only active customers are flagged when missing a theme.
+
+    DashboardRecentCustomer:
+      type: object
+      required:
+        - customerId
+        - customerCode
+        - companyName
+        - industry
+        - status
+        - createdAt
+      properties:
+        customerId:
+          type: string
+          format: uuid
+        customerCode:
+          type: string
+        companyName:
+          type: string
+        industry:
+          type: string
+        status:
+          type: string
+          enum: [active, trial, suspended, churned]
+        createdAt:
+          type: string
+          format: date-time
+
+    DashboardMetricsThemeCounts:
+      type: object
+      required: [total, withActiveTheme, customersWithNoActiveTheme]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: Total theme records across all customers.
+        withActiveTheme:
+          type: integer
+          minimum: 0
+          description: Count of customers that have at least one active theme.
+        customersWithNoActiveTheme:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardCustomerWithoutActiveTheme'
+
+    DashboardMetricsUserCounts:
+      type: object
+      required: [admins, regularUsers, customers, total]
+      properties:
+        admins:
+          type: integer
+          minimum: 0
+          description: Users with global role `admin` (UserRoles RoleIndex).
+        regularUsers:
+          type: integer
+          minimum: 0
+          description: Users with global role `user`.
+        customers:
+          type: integer
+          minimum: 0
+          description: Users with global role `customer` (reserved for future tenant users).
+        total:
+          type: integer
+          minimum: 0
+          description: Sum of admins, regularUsers, and customers.
+
+    DashboardMetrics:
+      type: object
+      required:
+        - customers
+        - themes
+        - users
+        - recentCustomers
+        - generatedAt
+        - cachedUntil
+      properties:
+        customers:
+          $ref: '#/components/schemas/DashboardMetricsCustomerCounts'
+        themes:
+          $ref: '#/components/schemas/DashboardMetricsThemeCounts'
+        users:
+          $ref: '#/components/schemas/DashboardMetricsUserCounts'
+        recentCustomers:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/DashboardRecentCustomer'
+        generatedAt:
+          type: string
+          format: date-time
+          description: When this snapshot was computed.
+        cachedUntil:
+          type: string
+          format: date-time
+          description: >
+            Warm-container cache expiry. Identical responses may be returned until this time.
 
     CreateCustomerRequest:
       type: object

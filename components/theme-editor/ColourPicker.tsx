@@ -1,6 +1,7 @@
 'use client';
 
-import { HexColorPicker } from 'react-colorful';
+import { HexAlphaColorPicker } from 'react-colorful';
+import { normalizeHexColor, toPickerHex } from '@/lib/theme-editor/theme-editor.utils';
 import { cn } from '@/lib/utils';
 
 export interface ColourPickerProps {
@@ -8,23 +9,26 @@ export interface ColourPickerProps {
   onChange: (hex: string) => void;
 }
 
-function toHex6ForPicker(value: string): string {
-  const v = value.trim();
-  if (!v.startsWith('#')) return '#000000';
-  const body = v.slice(1);
-  if (body.length < 6 || !/^[0-9A-Fa-f]{6}/i.test(body)) return '#000000';
-  return `#${body.slice(0, 6)}`.toUpperCase();
-}
-
 export function ColourPicker({ value, onChange }: ColourPickerProps) {
-  const safe = toHex6ForPicker(value);
+  const pickerValue = toPickerHex(value);
 
   return (
-    <div className={cn('theme-colourful w-full')}>
-      <HexColorPicker
-        color={safe}
-        onChange={(hex) => onChange(hex.toUpperCase())}
-        style={{ width: '100%', height: '200px' }}
+    <div
+      className={cn('theme-colourful theme-colourful-alpha w-full')}
+      style={{
+        backgroundImage:
+          'linear-gradient(45deg, #e5e7eb 25%, transparent 25%), linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e7eb 75%), linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)',
+        backgroundSize: '12px 12px',
+        backgroundPosition: '0 0, 0 6px, 6px -6px, -6px 0',
+        backgroundColor: '#fff',
+        borderRadius: '8px',
+        padding: '4px',
+      }}
+    >
+      <HexAlphaColorPicker
+        color={pickerValue}
+        onChange={(hex) => onChange(normalizeHexColor(hex))}
+        style={{ width: '100%', height: '220px' }}
       />
     </div>
   );

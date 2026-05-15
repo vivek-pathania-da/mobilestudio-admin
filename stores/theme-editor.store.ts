@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { firebaseApi } from '@/lib/api/firebase.api';
 import { themesApi } from '@/lib/api/themes.api';
 import {
   DEFAULT_THEME,
@@ -13,6 +14,7 @@ import {
 import type { ThemeEditorState } from '@/lib/theme-editor/theme-editor.types';
 import type { UpdateThemeRequest } from '@/types/api';
 import { TOKEN_CATEGORIES } from '@/lib/theme-editor/token-categories';
+import { getFirstTokenKeyForCategory } from '@/lib/theme-editor/theme-editor.utils';
 
 type Snapshot = {
   themeName: string;
@@ -104,7 +106,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
   fontSizeOverrides: {},
   selectedCategoryId: INITIAL_CATEGORY,
   selectedTab: 'core',
-  selectedTokenKey: null,
+  selectedTokenKey: getFirstTokenKeyForCategory(INITIAL_CATEGORY),
   isDirty: false,
   isSaving: false,
   savedSnapshot: null,
@@ -164,7 +166,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       fontSizeOverrides,
       selectedCategoryId: INITIAL_CATEGORY,
       selectedTab: 'core',
-      selectedTokenKey: null,
+      selectedTokenKey: getFirstTokenKeyForCategory(INITIAL_CATEGORY),
       isDirty: false,
       isSaving: false,
       savedSnapshot: cloneSnapshot(snap),
@@ -250,15 +252,16 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
   selectCategory: (categoryId) =>
     set({
       selectedCategoryId: categoryId,
-      selectedTokenKey: null,
+      selectedTokenKey: getFirstTokenKeyForCategory(categoryId),
     }),
 
   selectTab: (tab) => {
     const firstCat = TOKEN_CATEGORIES.find((c) => c.tab === tab);
+    const categoryId = firstCat?.id ?? INITIAL_CATEGORY;
     set({
       selectedTab: tab,
-      selectedCategoryId: firstCat?.id ?? INITIAL_CATEGORY,
-      selectedTokenKey: null,
+      selectedCategoryId: categoryId,
+      selectedTokenKey: getFirstTokenKeyForCategory(categoryId),
     });
   },
 
@@ -310,6 +313,10 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
           snap.fontSizeOverrides[key] = value;
         }
       }
+      // Only the customer's active theme should ping mobile — trust API, not local state
+      if (updated.isActive) {
+        void firebaseApi.notifyThemeUpdated(customerId).catch(() => {});
+      }
       set({
         themeName: updated.themeName,
         version: updated.version,
@@ -329,12 +336,14 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
 
   activate: async () => {
     const { customerId, themeId } = get();
-    await themesApi.activate(customerId, themeId);
+    const activated = await themesApi.activate(customerId, themeId);
     set({ isActive: true });
+    void firebaseApi.notifyThemeUpdated(activated.customerId).catch(() => {});
   },
 
   discard: () => {
-    const snap = get().savedSnapshot;
+    const state = get();
+    const snap = state.savedSnapshot;
     if (!snap) return;
     set({
       themeName: snap.themeName,
@@ -342,7 +351,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       fontFamilyOverrides: { ...snap.fontFamilyOverrides },
       fontSizeOverrides: { ...snap.fontSizeOverrides },
       isDirty: false,
-      selectedTokenKey: null,
+      selectedTokenKey: getFirstTokenKeyForCategory(state.selectedCategoryId),
     });
   },
 

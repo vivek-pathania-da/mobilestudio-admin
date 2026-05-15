@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils';
 
 function displayHex(value: string): string {
   if (isTransparent(value)) return '';
-  return value.replace(/^#/, '').toUpperCase();
+  const raw = value.replace(/^#/, '').toUpperCase();
+  return raw;
 }
 
 export interface TokenRowProps {
@@ -46,11 +47,12 @@ export function TokenRow({
         }
       }}
       className={cn(
-        'flex h-[52px] cursor-pointer items-center gap-3 border-b border-[#E2E8F0] px-4',
-        isModified && 'border-l-[3px] border-l-[#2563EB] bg-[#F8FBFF] pl-[13px]',
-        !isModified && 'border-l-[3px] border-l-transparent bg-white',
-        isSelected && 'shadow-[inset_0_0_0_1px_#2563EB]'
+        'flex h-[52px] cursor-pointer items-center gap-3 border-b border-border border-l border-l-transparent bg-white px-4 transition-colors',
+        'hover:bg-[var(--color-primary-light)]',
+        isSelected &&
+          'bg-[var(--color-primary-light)] border-l-[var(--color-border-strong)]'
       )}
+      aria-selected={isSelected}
     >
       <button
         type="button"
@@ -59,8 +61,8 @@ export function TokenRow({
           onSelect();
         }}
         className={cn(
-          'size-8 shrink-0 rounded-md border border-[#E2E8F0]',
-          isSelected && 'outline outline-2 outline-offset-2 outline-[#2563EB]'
+          'size-8 shrink-0 rounded-full border border-border',
+          isSelected && 'outline outline-1 outline-offset-1 outline-[var(--color-border-strong)]'
         )}
         style={
           transparent
@@ -81,7 +83,7 @@ export function TokenRow({
         <span
           className={cn(
             'text-[10px] font-medium tracking-wide uppercase',
-            isModified ? 'text-[#2563EB]' : 'text-[#9CA3AF]'
+            isModified ? 'text-muted-foreground' : 'text-[#9CA3AF]'
           )}
         >
           {isModified ? 'Modified' : 'Default'}
@@ -92,7 +94,7 @@ export function TokenRow({
         role="presentation"
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          'flex h-8 w-24 shrink-0 items-center justify-center rounded-md border border-[#E2E8F0] bg-[#F9FAFB] px-1.5 font-mono text-[13px] text-[#374151] select-none',
+          'flex h-8 w-24 shrink-0 items-center justify-center rounded-md border border-border bg-[#F9FAFB] px-1.5 font-mono text-[13px] text-[#374151] select-none',
           transparent && 'text-[#9CA3AF]'
         )}
         title="Edit in the colour panel on the right"
@@ -110,7 +112,7 @@ export function TokenRow({
         }}
         className={cn(
           'flex size-8 shrink-0 items-center justify-center rounded-md',
-          isModified ? 'cursor-pointer text-[#2563EB]' : 'cursor-default text-[#E2E8F0]'
+          isModified ? 'cursor-pointer text-muted-foreground' : 'cursor-default text-gray-300'
         )}
         aria-label={`Reset ${tokenKey}`}
       >

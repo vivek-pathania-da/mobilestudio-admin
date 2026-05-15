@@ -45,6 +45,7 @@ import {
   Users,
   Video,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useThemeEditorStore } from '@/stores/theme-editor.store';
 import { TOKEN_CATEGORIES } from '@/lib/theme-editor/token-categories';
 import { getCategoryTokenCount } from '@/lib/theme-editor/theme-editor.utils';
@@ -113,16 +114,16 @@ export function CategoryNav() {
 
   return (
     <aside
-      className="flex h-full w-[260px] shrink-0 flex-col bg-[#111827] text-white"
+      className="flex h-full w-[260px] shrink-0 flex-col border-r border-[var(--color-sidebar-border)] bg-[var(--color-sidebar)] text-[var(--color-sidebar-foreground)]"
       aria-label="Token categories"
     >
       <div className="shrink-0 px-4 py-4">
-        <p className="text-[10px] font-medium tracking-[0.2em] text-[#9CA3AF] uppercase">
+        <p className="text-[10px] font-medium tracking-[0.2em] text-[var(--color-sidebar-muted)] uppercase">
           Token categories
         </p>
       </div>
 
-      <div className="flex shrink-0 border-b border-[#1F2937] px-2 pb-0">
+      <div className="flex shrink-0 border-b border-[var(--color-sidebar-border)] px-2 pb-0">
         {(['core', 'extended'] as const).map((tab) => {
           const active = selectedTab === tab;
           return (
@@ -130,11 +131,12 @@ export function CategoryNav() {
               key={tab}
               type="button"
               onClick={() => selectTab(tab)}
-              className={`flex-1 py-2.5 text-sm font-medium capitalize transition-colors ${
+              className={cn(
+                'flex-1 border-b-2 py-2.5 text-sm font-medium capitalize transition-colors',
                 active
-                  ? 'border-b-2 border-white text-white'
-                  : 'border-b-2 border-transparent text-[#6B7280] hover:text-[#D1D5DB]'
-              }`}
+                  ? 'border-[var(--color-sidebar-accent)] text-[var(--color-sidebar-foreground)]'
+                  : 'border-transparent text-[var(--color-sidebar-muted)] hover:text-[var(--color-sidebar-foreground)]'
+              )}
             >
               {tab}
             </button>
@@ -152,19 +154,24 @@ export function CategoryNav() {
               key={cat.id}
               type="button"
               onClick={() => selectCategory(cat.id)}
-              className={`flex w-full cursor-pointer items-center gap-2.5 rounded px-3 py-2 text-left transition-colors ${
+              className={cn(
+                'flex w-full cursor-pointer items-center gap-2.5 rounded-none border-l-2 border-transparent px-3 py-2 text-left transition-colors',
                 selected
-                  ? 'border-l-2 border-[#2563EB] bg-[#1F2937] pl-[10px] text-white'
-                  : 'border-l-2 border-transparent text-[#9CA3AF] hover:bg-[#1F2937] hover:text-[#D1D5DB]'
-              }`}
+                  ? 'border-l-[var(--color-sidebar-accent)] bg-[var(--color-sidebar-hover)] pl-[10px] text-[var(--color-sidebar-foreground)]'
+                  : 'text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-hover)] hover:text-[var(--color-sidebar-foreground)]'
+              )}
             >
               <Icon
-                className="size-4 shrink-0"
+                className={cn(
+                  'size-4 shrink-0',
+                  selected
+                    ? 'text-[var(--color-sidebar-accent)]'
+                    : 'text-[var(--color-sidebar-muted)]'
+                )}
                 strokeWidth={1.75}
-                style={{ color: selected ? '#2563EB' : '#4B5563' }}
               />
               <span className="min-w-0 flex-1 truncate text-[13px]">{cat.label}</span>
-              <span className="shrink-0 rounded-full bg-[#374151] px-1.5 py-0.5 font-mono text-[11px] text-[#9CA3AF]">
+              <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)] px-1 font-mono text-[10px] font-semibold text-[var(--color-primary-foreground)]">
                 {count}
               </span>
             </button>
@@ -172,7 +179,7 @@ export function CategoryNav() {
         })}
       </nav>
 
-      <div className="shrink-0 border-t border-[#1F2937] px-3 py-3 text-center text-[11px] text-[#4B5563]">
+      <div className="shrink-0 border-t border-[var(--color-sidebar-border)] px-3 py-3 text-center text-[11px] text-[var(--color-sidebar-muted)]">
         {COLOUR_TOKEN_COUNT} colour · {FONT_TOKEN_COUNT} font tokens
       </div>
     </aside>

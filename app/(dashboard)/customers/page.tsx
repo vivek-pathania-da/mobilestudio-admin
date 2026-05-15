@@ -1,15 +1,16 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   ChevronLeft,
   ChevronRight,
+  Eye,
   Loader2,
-  MoreVertical,
   Plus,
   Search,
+  UserX,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,20 +31,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { useAuthHydration } from '@/hooks/use-auth-hydration';
 import { useAuthStore } from '@/stores/auth.store';
 import { customersApi } from '@/lib/api/customers.api';
 import { getApiErrorMessage } from '@/lib/api/client';
 import type { Customer, CustomerStatus } from '@/types/api';
 import { AddCustomerDialog, ChurnCustomerDialog } from '@/components/customers/customer-dialogs';
-import { EditCustomerSheet } from '@/components/customers/edit-customer-sheet';
+import { statusConfig } from '@/lib/design-system';
+import { formatPaginationSummary } from '@/lib/dashboard-utils';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 5;
@@ -58,31 +53,8 @@ function formatListDate(iso: string): string {
   });
 }
 
-function industryBadgeClass(industry: string): string {
-  const key = industry.toLowerCase();
-  if (key.includes('health')) {
-    return 'border-violet-200 bg-violet-50 text-violet-800';
-  }
-  if (
-    key.includes('tech') ||
-    key.includes('software') ||
-    key.includes('saas')
-  ) {
-    return 'border-sky-200 bg-sky-50 text-sky-800';
-  }
-  if (key.includes('retail') || key.includes('commerce')) {
-    return 'border-slate-200 bg-slate-100 text-slate-700';
-  }
-  if (key.includes('finance') || key.includes('bank')) {
-    return 'border-sky-200 bg-sky-50 text-sky-900';
-  }
-  if (key.includes('logistics') || key.includes('supply') || key.includes('chain')) {
-    return 'border-slate-200 bg-slate-100 text-slate-700';
-  }
-  if (key.includes('aviat')) {
-    return 'border-blue-200 bg-blue-50 text-blue-900';
-  }
-  return 'border-border bg-muted text-muted-foreground';
+function industryBadgeClass(_industry: string): string {
+  return 'border-gray-200 bg-gray-50 text-foreground';
 }
 
 function industryBadgeLabel(industry: string): string {
@@ -91,10 +63,14 @@ function industryBadgeLabel(industry: string): string {
 }
 
 function statusBadgeClass(s: CustomerStatus): string {
-  if (s === 'active') {
-    return 'border-emerald-200 bg-emerald-50 font-semibold text-emerald-800';
-  }
-  return 'border-red-200 bg-red-50 font-semibold text-red-800';
+  const key = s in statusConfig ? s : 'churned';
+  const config = statusConfig[key as keyof typeof statusConfig];
+  return cn(
+    'font-semibold',
+    config.color,
+    config.bg,
+    config.border
+  );
 }
 
 function statusLabel(s: CustomerStatus): string {
@@ -102,6 +78,7 @@ function statusLabel(s: CustomerStatus): string {
 }
 
 export default function CustomersPage() {
+  const router = useRouter();
   const ready = useAuthHydration();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
@@ -110,7 +87,6 @@ export default function CustomersPage() {
   const [industryFilter, setIndustryFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [addOpen, setAddOpen] = useState(false);
-  const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
   const [churnCustomer, setChurnCustomer] = useState<Customer | null>(null);
 
   const apiStatus: CustomerStatus | undefined =
@@ -395,14 +371,12 @@ export default function CustomersPage() {
                 pageRows.map((row) => (
                   <TableRow
                     key={row.customerId}
+                    className="cursor-pointer hover:bg-[var(--color-primary-light)]"
                     style={{ borderColor: 'var(--color-border)' }}
+                    onClick={() => router.push(`/customers/${row.customerId}`)}
                   >
                     <TableCell className="pl-6">
-                      <Link
-                        href={`/customers/${row.customerId}`}
-                        className="block rounded-sm outline-offset-2 hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-                      >
-                        <div
+                      <div
                           className="font-semibold"
                           style={{ color: 'var(--color-text-primary)' }}
                         >
@@ -424,7 +398,6 @@ export default function CustomersPage() {
                       >
                         UUID: {row.customerId}
                       </div>
-                      </Link>
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -453,10 +426,12 @@ export default function CustomersPage() {
                     </TableCell>
                     <TableCell>
                       <Badge
-                        variant="outline"
+                        variant={
+                          row.status === 'active' ? 'default' : 'outline'
+                        }
                         className={cn(
-                          'rounded-md px-2 py-0.5 text-[11px] tracking-wide uppercase',
-                          statusBadgeClass(row.status)
+                          'rounded-full px-2.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
+                          row.status !== 'active' && statusBadgeClass(row.status)
                         )}
                       >
                         {statusLabel(row.status)}
@@ -468,36 +443,37 @@ export default function CustomersPage() {
                     >
                       {formatListDate(row.createdAt)}
                     </TableCell>
-                    <TableCell className="pr-6 text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="text-muted-foreground"
-                            aria-label={`Actions for ${row.companyName}`}
-                          >
-                            <MoreVertical className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuItem asChild>
-                            <Link href={`/customers/${row.customerId}`}>View details</Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setEditCustomer(row)}>
-                            Edit customer
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            variant="destructive"
-                            disabled={row.status !== 'active'}
-                            onClick={() => setChurnCustomer(row)}
-                          >
-                            Churn customer
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                    <TableCell
+                      className="pr-6 text-right"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="size-8 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          aria-label={`Details for ${row.companyName}`}
+                          title="Details"
+                          onClick={() =>
+                            router.push(`/customers/${row.customerId}`)
+                          }
+                        >
+                          <Eye className="size-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="size-8 text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
+                          aria-label={`Churn ${row.companyName}`}
+                          title="Churn"
+                          disabled={row.status !== 'active'}
+                          onClick={() => setChurnCustomer(row)}
+                        >
+                          <UserX className="size-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -509,12 +485,10 @@ export default function CustomersPage() {
           className="flex flex-col gap-3 border-t px-6 py-4 sm:flex-row sm:items-center sm:justify-between"
           style={{ borderColor: 'var(--color-border)' }}
         >
-          <p
-            className="text-sm"
-            style={{ color: 'var(--color-text-tertiary)' }}
-          >
-            Showing {showingFrom} to {showingTo} of {total} results
+          <p className="text-sm text-muted-foreground">
+            {formatPaginationSummary(total, showingFrom, showingTo)}
           </p>
+          {totalPages > 1 ? (
           <div className="flex items-center gap-1">
             <Button
               type="button"
@@ -575,17 +549,11 @@ export default function CustomersPage() {
               <ChevronRight className="size-4" />
             </Button>
           </div>
+          ) : null}
         </CardFooter>
       </Card>
 
       <AddCustomerDialog open={addOpen} onOpenChange={setAddOpen} />
-      <EditCustomerSheet
-        customer={editCustomer}
-        open={editCustomer !== null}
-        onOpenChange={(o) => {
-          if (!o) setEditCustomer(null);
-        }}
-      />
       <ChurnCustomerDialog
         customer={churnCustomer}
         open={churnCustomer !== null}

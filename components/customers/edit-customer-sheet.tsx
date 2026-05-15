@@ -319,7 +319,7 @@ export function EditCustomerSheet({
                           form.setValue('status', value, { shouldDirty: true })
                         }
                         className={cn(
-                          'flex flex-col items-center gap-2 rounded-xl border-2 px-2 py-4 text-center transition-colors',
+                          'flex flex-col items-center gap-2 rounded-xl border px-2 py-4 text-center transition-colors',
                           selected
                             ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 text-[var(--color-primary)]'
                             : 'border-border bg-background text-muted-foreground hover:bg-muted/50',

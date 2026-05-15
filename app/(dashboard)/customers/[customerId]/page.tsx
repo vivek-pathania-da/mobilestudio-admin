@@ -5,10 +5,22 @@ import { useParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
+import type { LucideIcon } from 'lucide-react';
 import {
+  Building2,
+  Calendar,
   ChevronRight,
+  CircleCheck,
+  Clock,
   Loader2,
+  Mail,
   Palette,
+  Pencil,
+  Phone,
+  Plus,
+  Trash2,
+  User,
+  UserX,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -17,11 +29,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAuthHydration } from '@/hooks/use-auth-hydration';
 import { useAuthStore } from '@/stores/auth.store';
 import { customersApi } from '@/lib/api/customers.api';
+import { firebaseApi } from '@/lib/api/firebase.api';
 import { themesApi } from '@/lib/api/themes.api';
 import { getApiErrorMessage } from '@/lib/api/client';
 import type { Customer, CustomerStatus, ThemeListItem, ThemeTokenMap, ThemeFontTokens } from '@/types/api';
 import { EditCustomerSheet } from '@/components/customers/edit-customer-sheet';
 import { ChurnCustomerDialog } from '@/components/customers/customer-dialogs';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { statusConfig } from '@/lib/design-system';
 import { cn } from '@/lib/utils';
 
 const UUID_REGEX =
@@ -49,19 +64,49 @@ function formatDetailDate(iso: string): string {
   });
 }
 
-function shortCustomerId(id: string): string {
-  if (id.length <= 14) return id;
-  return `${id.slice(0, 8)}…${id.slice(-4)}`;
+function titleCaseIndustry(industry: string): string {
+  return industry
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function DetailItem({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: LucideIcon;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <dt className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <Icon className="size-3.5 shrink-0 opacity-70" aria-hidden />
+        {label}
+      </dt>
+      <dd
+        className="mt-1 text-sm font-medium"
+        style={{ color: 'var(--color-text-primary)' }}
+      >
+        {children}
+      </dd>
+    </div>
+  );
 }
 
 function statusBadgeClass(s: CustomerStatus): string {
-  if (s === 'active') {
-    return 'border-emerald-200 bg-emerald-50 font-semibold text-emerald-800';
-  }
-  if (s === 'churned') {
-    return 'border-red-200 bg-red-50 font-semibold text-red-800';
-  }
-  return 'border-amber-200 bg-amber-50 font-semibold text-amber-800';
+  const key = s in statusConfig ? s : 'churned';
+  const config = statusConfig[key as keyof typeof statusConfig];
+  return cn(
+    'font-semibold',
+    config.color,
+    config.bg,
+    config.border
+  );
 }
 
 function statusLabel(s: CustomerStatus): string {
@@ -113,6 +158,7 @@ export default function CustomerDetailPage() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [churnOpen, setChurnOpen] = useState(false);
+  const [deleteTheme, setDeleteTheme] = useState<ThemeListItem | null>(null);
 
   const enabled = ready && isAuthenticated && validId;
 
@@ -139,11 +185,23 @@ export default function CustomerDetailPage() {
 
   const activateMutation = useMutation({
     mutationFn: (themeId: string) => themesApi.activate(customerId, themeId),
-    onSuccess: () => {
+    onSuccess: (activated) => {
       toast.success('Theme activated');
+      void firebaseApi.notifyThemeUpdated(activated.customerId).catch(() => {});
       void qc.invalidateQueries({ queryKey: ['themes', customerId] });
       void qc.invalidateQueries({ queryKey: ['theme-active', customerId] });
       void qc.invalidateQueries({ queryKey: ['customer', customerId] });
+    },
+    onError: (e) => toast.error(getApiErrorMessage(e)),
+  });
+
+  const deleteThemeMutation = useMutation({
+    mutationFn: (themeId: string) => themesApi.delete(customerId, themeId),
+    onSuccess: () => {
+      toast.success('Theme deleted');
+      setDeleteTheme(null);
+      void qc.invalidateQueries({ queryKey: ['themes', customerId] });
+      void qc.invalidateQueries({ queryKey: ['theme-active', customerId] });
     },
     onError: (e) => toast.error(getApiErrorMessage(e)),
   });
@@ -247,17 +305,28 @@ export default function CustomerDetailPage() {
           </nav>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={() => setEditOpen(true)}>
-            Edit customer
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            className="size-9"
+            aria-label="Edit customer"
+            title="Edit customer"
+            onClick={() => setEditOpen(true)}
+          >
+            <Pencil className="size-4" />
           </Button>
           <Button
             type="button"
             variant="outline"
-            className="border-destructive/40 text-destructive hover:bg-destructive/10"
+            size="icon-sm"
+            className="size-9 border-destructive/40 text-destructive hover:bg-destructive/10"
+            aria-label="Churn customer"
+            title="Churn customer"
             onClick={() => setChurnOpen(true)}
             disabled={customer.status !== 'active'}
           >
-            Churn customer
+            <UserX className="size-4" />
           </Button>
         </div>
       </div>
@@ -265,7 +334,7 @@ export default function CustomerDetailPage() {
       <Card className="border shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
         <CardContent className="flex flex-col gap-6 p-6 lg:flex-row lg:items-start">
           <div
-            className="flex size-20 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-white"
+            className="flex size-20 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white"
             style={{ backgroundColor: 'var(--color-primary)' }}
           >
             {companyInitials(customer.companyName)}
@@ -279,62 +348,67 @@ export default function CustomerDetailPage() {
                 {customer.companyName}
               </h1>
               <Badge
-                variant="outline"
+                variant={
+                  customer.status === 'active' ? 'default' : 'outline'
+                }
                 className={cn(
-                  'rounded-md px-2 py-0.5 text-[11px] tracking-wide uppercase',
-                  statusBadgeClass(customer.status)
+                  'rounded-full px-2.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
+                  customer.status !== 'active' &&
+                    statusBadgeClass(customer.status)
                 )}
               >
                 {statusLabel(customer.status)}
               </Badge>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary" className="font-mono text-xs uppercase">
-                {customer.customerCode}
-              </Badge>
-              {customer.industry.trim() ? (
-                <Badge variant="outline" className="text-xs">
-                  {customer.industry}
-                </Badge>
-              ) : null}
-            </div>
-            <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <dt className="text-muted-foreground">Primary contact</dt>
-                <dd className="mt-0.5 font-medium" style={{ color: 'var(--color-text-primary)' }}>
+            <p className="font-mono text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              {customer.customerCode}
+            </p>
+            <div className="grid gap-6 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <div className="flex flex-col gap-4">
+                <DetailItem icon={User} label="Primary contact">
                   {customer.contactName}
-                </dd>
-                <dd className="text-muted-foreground">{customer.primaryEmail}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Phone</dt>
-                <dd className="mt-0.5 font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                  {customer.primaryPhone?.trim() || '—'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Customer ID</dt>
-                <dd
-                  className="mt-0.5 font-mono text-xs break-all"
-                  title={customer.customerId}
-                  style={{ color: 'var(--color-text-secondary)' }}
-                >
-                  {shortCustomerId(customer.customerId)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Account created</dt>
-                <dd className="mt-0.5" style={{ color: 'var(--color-text-primary)' }}>
+                </DetailItem>
+                <DetailItem icon={Calendar} label="Account created">
                   {formatDetailDate(customer.createdAt)}
-                </dd>
+                </DetailItem>
               </div>
-              <div>
-                <dt className="text-muted-foreground">Last updated</dt>
-                <dd className="mt-0.5" style={{ color: 'var(--color-text-primary)' }}>
-                  {formatDistanceToNow(new Date(customer.updatedAt), { addSuffix: true })}
-                </dd>
+              <div className="flex flex-col gap-4">
+                <DetailItem icon={Mail} label="Email">
+                  <a
+                    href={`mailto:${customer.primaryEmail}`}
+                    className="font-medium text-foreground hover:text-[#374151] hover:underline"
+                  >
+                    {customer.primaryEmail}
+                  </a>
+                </DetailItem>
+                <DetailItem icon={Clock} label="Last updated">
+                  {formatDistanceToNow(new Date(customer.updatedAt), {
+                    addSuffix: true,
+                  })}
+                </DetailItem>
               </div>
-            </dl>
+              <div className="flex flex-col gap-4">
+                <DetailItem icon={Phone} label="Phone">
+                  {customer.primaryPhone?.trim() ? (
+                    <a
+                      href={`tel:${customer.primaryPhone.trim()}`}
+                      className="font-medium text-foreground hover:text-[#374151] hover:underline"
+                    >
+                      {customer.primaryPhone.trim()}
+                    </a>
+                  ) : (
+                    <span className="font-normal text-muted-foreground">—</span>
+                  )}
+                </DetailItem>
+                <DetailItem icon={Building2} label="Industry">
+                  {customer.industry.trim() ? (
+                    titleCaseIndustry(customer.industry)
+                  ) : (
+                    <span className="font-normal text-muted-foreground">—</span>
+                  )}
+                </DetailItem>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -345,8 +419,11 @@ export default function CustomerDetailPage() {
             <Palette className="size-4" aria-hidden />
             Themes
           </h2>
-          <Button variant="outline" size="sm" className="h-8" asChild>
-            <Link href={`/customers/${customerId}/themes/new`}>New theme</Link>
+          <Button variant="outline" size="sm" className="h-8 gap-1.5" asChild>
+            <Link href={`/customers/${customerId}/themes/new`}>
+              <Plus className="size-4" aria-hidden />
+              New theme
+            </Link>
           </Button>
         </div>
         {themesQuery.isPending ? (
@@ -377,6 +454,12 @@ export default function CustomerDetailPage() {
                 }
                 onActivate={() => activateMutation.mutate(item.themeId)}
                 canActivate={canEditThemes && !item.isActive}
+                onDelete={() => setDeleteTheme(item)}
+                canDelete={canEditThemes && !item.isActive}
+                deleting={
+                  deleteThemeMutation.isPending &&
+                  deleteThemeMutation.variables === item.themeId
+                }
               />
             ))}
           </div>
@@ -393,6 +476,25 @@ export default function CustomerDetailPage() {
         open={churnOpen}
         onOpenChange={setChurnOpen}
       />
+      <ConfirmDialog
+        open={deleteTheme !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTheme(null);
+        }}
+        title="Delete theme?"
+        description={
+          deleteTheme
+            ? `"${deleteTheme.themeName}" will be permanently removed. This cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Delete theme"
+        variant="destructive"
+        isLoading={deleteThemeMutation.isPending}
+        onConfirm={() => {
+          if (!deleteTheme) return;
+          return deleteThemeMutation.mutateAsync(deleteTheme.themeId);
+        }}
+      />
     </div>
   );
 }
@@ -405,6 +507,9 @@ function ThemeSummaryCard({
   activating,
   onActivate,
   canActivate,
+  onDelete,
+  canDelete,
+  deleting,
 }: {
   customerId: string;
   item: ThemeListItem;
@@ -413,6 +518,9 @@ function ThemeSummaryCard({
   activating: boolean;
   onActivate: () => void;
   canActivate: boolean;
+  onDelete: () => void;
+  canDelete: boolean;
+  deleting: boolean;
 }) {
   const active = item.isActive;
   const defaultTheme = isLikelyDefaultTheme(item);
@@ -436,8 +544,8 @@ function ThemeSummaryCard({
             ) : null}
             {active ? (
               <Badge
-                variant="outline"
-                className="border-emerald-200 bg-emerald-50 text-[10px] font-semibold uppercase text-emerald-800"
+                variant="default"
+                className="rounded-full text-[10px] font-semibold uppercase"
               >
                 Active
               </Badge>
@@ -455,7 +563,7 @@ function ThemeSummaryCard({
           {swatches.map((c, i) => (
             <span
               key={i}
-              className="size-7 shrink-0 rounded-md border border-black/10 shadow-inner"
+              className="size-7 shrink-0 rounded-full border border-black/10 shadow-inner"
               style={{ backgroundColor: c }}
               title={c}
             />
@@ -466,39 +574,61 @@ function ThemeSummaryCard({
         </div>
         <button
           type="button"
-          className="text-left text-xs font-medium text-primary hover:underline"
+          className="text-left text-xs font-medium text-foreground hover:text-[#374151] hover:underline"
         >
           {item.overrideCount} overrides
         </button>
         <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-xs text-muted-foreground">
           <span>Version v{item.version}</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" size="sm" className="h-8" asChild>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="size-8 text-muted-foreground hover:bg-muted"
+              title="Edit theme"
+              aria-label={`Edit ${item.themeName}`}
+              asChild
+            >
               <Link
                 href={`/customers/${customerId}/themes/${encodeURIComponent(item.themeId)}`}
               >
-                Edit theme
+                <Pencil className="size-4" />
               </Link>
             </Button>
             {!active ? (
               <Button
                 type="button"
-                size="sm"
-                className="inline-flex h-8 items-center gap-1.5 font-semibold"
-                style={{
-                  backgroundColor: 'var(--color-primary)',
-                  color: 'var(--color-primary-foreground)',
-                }}
+                variant="ghost"
+                size="icon-sm"
+                className="size-8 text-muted-foreground hover:bg-muted"
+                title="Set as active theme"
+                aria-label={`Set ${item.themeName} as active`}
                 disabled={!canActivate || activating}
                 onClick={onActivate}
               >
                 {activating ? (
-                  <>
-                    <Loader2 className="mr-1 size-3.5 animate-spin" />
-                    Activating…
-                  </>
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  'Activate'
+                  <CircleCheck className="size-4" />
+                )}
+              </Button>
+            ) : null}
+            {!active ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="size-8 text-red-600 hover:bg-red-50 disabled:opacity-40"
+                title="Delete theme"
+                aria-label={`Delete ${item.themeName}`}
+                disabled={!canDelete || deleting}
+                onClick={onDelete}
+              >
+                {deleting ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
                 )}
               </Button>
             ) : null}

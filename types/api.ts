@@ -185,3 +185,52 @@ export interface PaginationParams {
   limit?: number;
   nextToken?: string;
 }
+
+// ── Dashboard types (`DashboardMetrics` in OpenAPI) ───────
+export type CustomerIndustry = string;
+
+export type CustomerDashboardStatus =
+  | 'active'
+  | 'trial'
+  | 'suspended'
+  | 'churned';
+
+export interface DashboardCustomerSummary {
+  customerId: string;
+  customerCode: string;
+  companyName: string;
+  status: CustomerDashboardStatus;
+}
+
+export interface DashboardRecentCustomer {
+  customerId: string;
+  customerCode: string;
+  companyName: string;
+  industry: CustomerIndustry;
+  status: CustomerDashboardStatus;
+  createdAt: string;
+}
+
+export interface DashboardMetrics {
+  customers: {
+    total: number;
+    active: number;
+    trial: number;
+    suspended: number;
+    churned: number;
+  };
+  themes: {
+    total: number;
+    withActiveTheme: number;
+    customersWithNoActiveTheme: DashboardCustomerSummary[];
+  };
+  users: {
+    admins: number;
+    regularUsers: number;
+    customers: number;
+    total: number;
+  };
+  recentCustomers: DashboardRecentCustomer[];
+  generatedAt: string;
+  cachedUntil: string;
+}

@@ -35,20 +35,20 @@ export default function NewThemePage() {
 
   return (
     <div className="flex h-screen flex-col bg-[#F9FAFB]">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-[#E2E8F0] bg-white px-6">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-white px-6">
         <div className="flex items-center gap-2 text-sm text-[#6B7280]">
-          <Link href="/customers" className="hover:text-[#0F172A]">
+          <Link href="/customers" className="hover:text-foreground">
             Customers
           </Link>
           <ChevronRight className="size-3.5 text-[#9CA3AF]" />
           <Link
             href={`/customers/${customerId}`}
-            className="hover:text-[#0F172A]"
+            className="hover:text-foreground"
           >
             Customer
           </Link>
           <ChevronRight className="size-3.5 text-[#9CA3AF]" />
-          <span className="font-medium text-[#0F172A]">New theme</span>
+          <span className="font-medium text-foreground">New theme</span>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={() => router.back()}>
           Cancel
@@ -66,8 +66,8 @@ export default function NewThemePage() {
               <div
                 className={`flex size-9 items-center justify-center rounded-full text-sm font-semibold ${
                   step.active
-                    ? 'bg-[#2563EB] text-white'
-                    : 'border-2 border-[#E2E8F0] text-[#9CA3AF]'
+                    ? 'bg-[#47CD89] text-white'
+                    : 'border border-border text-[#9CA3AF]'
                 }`}
               >
                 {step.n}
@@ -77,8 +77,8 @@ export default function NewThemePage() {
           ))}
         </div>
 
-        <div className="rounded-xl border border-[#E2E8F0] bg-white p-8 shadow-md">
-          <h1 className="text-center text-2xl font-bold text-[#0F172A]">
+        <div className="rounded-xl border border-border bg-white p-8 shadow-md">
+          <h1 className="text-center text-2xl font-bold text-foreground">
             Create a new theme
           </h1>
           <p className="mt-2 text-center text-sm text-[#6B7280]">
@@ -102,7 +102,7 @@ export default function NewThemePage() {
             </p>
           </div>
 
-          <hr className="my-6 border-[#E2E8F0]" />
+          <hr className="my-6 border-border" />
 
           <p className="mb-3 text-[11px] font-medium tracking-wide text-[#6B7280] uppercase">
             Start from
@@ -110,14 +110,14 @@ export default function NewThemePage() {
           <div className="flex gap-3">
             <button
               type="button"
-              className="flex-1 rounded-lg border-2 border-[#2563EB] bg-[#EFF6FF] px-4 py-4 text-left text-sm font-medium text-[#1D4ED8]"
+              className="flex-1 rounded-lg border border-border bg-white px-4 py-4 text-left text-sm font-medium text-foreground hover:bg-muted"
             >
               Default theme
             </button>
             <button
               type="button"
               disabled
-              className="flex-1 cursor-not-allowed rounded-lg border border-[#E2E8F0] px-4 py-4 text-left text-sm text-[#9CA3AF]"
+              className="flex-1 cursor-not-allowed rounded-lg border border-border px-4 py-4 text-left text-sm text-[#9CA3AF]"
             >
               Copy existing
             </button>
@@ -125,7 +125,7 @@ export default function NewThemePage() {
 
           <Button
             type="button"
-            className="mt-6 h-11 w-full bg-[#2563EB] font-semibold text-white hover:bg-[#1D4ED8]"
+            className="mt-6 h-11 w-full bg-[#47CD89] font-semibold text-white hover:bg-[#093227]"
             disabled={themeName.trim().length === 0 || mutation.isPending}
             onClick={() => mutation.mutate()}
           >
