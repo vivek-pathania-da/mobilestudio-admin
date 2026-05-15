@@ -165,6 +165,20 @@ export function buildOverridesPayload(
   return out;
 }
 
+/** Reset stored overrides by sending each previous key back to its default. */
+export function buildClearColourOverridesPayload(
+  previousOverrides: Record<string, string>
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(previousOverrides)) {
+    const def = DEFAULT_THEME[key];
+    if (def !== undefined) {
+      out[key] = toApiHexColor(def);
+    }
+  }
+  return out;
+}
+
 /** CSS `background-color` from API or editor hex. */
 export function toCssHexColor(hex: string): string {
   return fromApiHexColor(hex);

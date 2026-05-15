@@ -1918,9 +1918,53 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /v1/themes/{customerId}/{themeId}:
+    get:
+      summary: Get a theme by id (admin)
+      description: Returns the full resolved token map for a specific theme (defaults merged with overrides).
+      tags: [Theme]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ThemeCustomerId'
+        - $ref: '#/components/parameters/ThemeId'
+      responses:
+        '200':
+          description: Resolved theme
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ThemeResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Theme not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     put:
       summary: Update a theme (admin)
-      description: Token updates are merged with existing overrides. version increments on each save.
+      description: >
+        Token updates are merged with existing overrides unless an empty map is sent
+        (`tokens`, `fontFamilies`, or `fontSizes` as `{}`), which clears all overrides in that map.
+        version increments on each save.
       tags: [Theme]
       security:
         - BearerAuth: []

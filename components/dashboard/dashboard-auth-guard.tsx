@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useAuthHydration } from '@/hooks/use-auth-hydration';
+import { ensureAccessToken } from '@/lib/auth/refresh-access-token';
 import { useAuthStore } from '@/stores/auth.store';
 
 export function DashboardAuthGuard({
@@ -18,7 +19,11 @@ export function DashboardAuthGuard({
     if (!ready) return;
     if (!isAuthenticated) {
       router.replace('/login');
+      return;
     }
+    void ensureAccessToken().catch(() => {
+      // Interceptor / expireSession handles failed refresh on next API call
+    });
   }, [ready, isAuthenticated, router]);
 
   if (!ready) {

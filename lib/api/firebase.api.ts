@@ -1,4 +1,4 @@
-import { tokenStore } from '@/lib/auth';
+import { formatAuthorizationHeader, tokenStore } from '@/lib/auth';
 
 export const firebaseApi = {
   notifyThemeUpdated: async (customerId: string): Promise<void> => {
@@ -10,7 +10,7 @@ export const firebaseApi = {
         headers: {
           'Content-Type': 'application/json',
           ...(accessToken
-            ? { Authorization: `Bearer ${accessToken}` }
+            ? { Authorization: formatAuthorizationHeader(accessToken) }
             : {}),
         },
         body: JSON.stringify({ customerId }),

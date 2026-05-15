@@ -9,10 +9,11 @@ import {
   DEFAULT_FONT_SIZES,
 } from '@/lib/theme-editor/default-theme';
 import {
+  buildClearColourOverridesPayload,
   buildOverridesPayload,
 } from '@/lib/theme-editor/theme-editor.utils';
 import type { ThemeEditorState } from '@/lib/theme-editor/theme-editor.types';
-import type { UpdateThemeRequest } from '@/types/api';
+import type { ThemeResponse, UpdateThemeRequest } from '@/types/api';
 import { TOKEN_CATEGORIES } from '@/lib/theme-editor/token-categories';
 import {
   fromApiHexColor,
@@ -59,6 +60,64 @@ function buildFontSizePayload(
   return out;
 }
 
+function buildClearFontFamilyPayload(
+  previous: Record<string, string>
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(previous)) {
+    const def = DEFAULT_FONT_FAMILIES[key];
+    if (def !== undefined) {
+      out[key] = def;
+    }
+  }
+  return out;
+}
+
+function buildClearFontSizePayload(
+  previous: Record<string, number>
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const key of Object.keys(previous)) {
+    const def = DEFAULT_FONT_SIZES[key];
+    if (def !== undefined) {
+      out[key] = def;
+    }
+  }
+  return out;
+}
+
+function snapshotFromThemeResponse(updated: ThemeResponse): Snapshot {
+  const snap: Snapshot = {
+    themeName: updated.themeName,
+    colourOverrides: {},
+    fontFamilyOverrides: {},
+    fontSizeOverrides: {},
+  };
+  for (const [key, value] of Object.entries(updated.tokens)) {
+    const editorHex = fromApiHexColor(value);
+    if (DEFAULT_THEME[key] !== undefined && editorHex !== DEFAULT_THEME[key]) {
+      snap.colourOverrides[key] = editorHex;
+    }
+  }
+  for (const [key, value] of Object.entries(updated.font_tokens.families)) {
+    if (
+      DEFAULT_FONT_FAMILIES[key] !== undefined &&
+      value !== DEFAULT_FONT_FAMILIES[key]
+    ) {
+      snap.fontFamilyOverrides[key] = value;
+    }
+  }
+  for (const [key, value] of Object.entries(updated.font_tokens.sizes)) {
+    if (
+      DEFAULT_FONT_SIZES[key] !== undefined &&
+      value !== DEFAULT_FONT_SIZES[key]
+    ) {
+      snap.fontSizeOverrides[key] = value;
+    }
+  }
+  return snap;
+}
+
 interface ThemeEditorStore extends ThemeEditorState {
   savedSnapshot: Snapshot | null;
 
@@ -87,7 +146,7 @@ interface ThemeEditorStore extends ThemeEditorState {
   selectTab: (tab: 'core' | 'extended') => void;
   selectToken: (tokenKey: string | null) => void;
 
-  save: () => Promise<void>;
+  save: () => Promise<ThemeResponse>;
   activate: () => Promise<void>;
   discard: () => void;
 
@@ -112,6 +171,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
   selectedTokenKey: getFirstTokenKeyForCategory(INITIAL_CATEGORY),
   isDirty: false,
   isSaving: false,
+  clearAllOverrides: false,
   savedSnapshot: null,
 
   initialise: (
@@ -173,6 +233,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       selectedTokenKey: getFirstTokenKeyForCategory(INITIAL_CATEGORY),
       isDirty: false,
       isSaving: false,
+      clearAllOverrides: false,
       savedSnapshot: cloneSnapshot(snap),
     });
   },
@@ -187,7 +248,11 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       } else {
         newOverrides[tokenKey] = value;
       }
-      return { colourOverrides: newOverrides, isDirty: true };
+      return {
+        colourOverrides: newOverrides,
+        isDirty: true,
+        clearAllOverrides: false,
+      };
     });
   },
 
@@ -195,7 +260,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
     set((state) => {
       const newOverrides = { ...state.colourOverrides };
       delete newOverrides[tokenKey];
-      return { colourOverrides: newOverrides, isDirty: true };
+      return { colourOverrides: newOverrides, isDirty: true, clearAllOverrides: false };
     });
   },
 
@@ -205,6 +270,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
         fontFamilyOverrides: {},
         fontSizeOverrides: {},
         isDirty: true,
+        clearAllOverrides: false,
       });
       return;
     }
@@ -216,7 +282,11 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       categoryTokens.forEach((key) => {
         delete newOverrides[key];
       });
-      return { colourOverrides: newOverrides, isDirty: true };
+      return {
+        colourOverrides: newOverrides,
+        isDirty: true,
+        clearAllOverrides: false,
+      };
     });
   },
 
@@ -226,6 +296,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       fontFamilyOverrides: {},
       fontSizeOverrides: {},
       isDirty: true,
+      clearAllOverrides: true,
     });
   },
 
@@ -237,7 +308,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       } else {
         overrides[key] = value;
       }
-      return { fontFamilyOverrides: overrides, isDirty: true };
+      return { fontFamilyOverrides: overrides, isDirty: true, clearAllOverrides: false };
     });
   },
 
@@ -249,7 +320,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       } else {
         overrides[key] = value;
       }
-      return { fontSizeOverrides: overrides, isDirty: true };
+      return { fontSizeOverrides: overrides, isDirty: true, clearAllOverrides: false };
     });
   },
 
@@ -279,6 +350,8 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       colourOverrides,
       fontFamilyOverrides,
       fontSizeOverrides,
+      clearAllOverrides,
+      savedSnapshot,
     } = get();
     set({ isSaving: true });
     try {
@@ -286,38 +359,30 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       const fontFamilies = buildFontFamilyPayload(fontFamilyOverrides);
       const fontSizes = buildFontSizePayload(fontSizeOverrides);
       const body: UpdateThemeRequest = { themeName };
-      if (Object.keys(tokens).length > 0) body.tokens = tokens;
-      if (Object.keys(fontFamilies).length > 0) body.fontFamilies = fontFamilies;
-      if (Object.keys(fontSizes).length > 0) body.fontSizes = fontSizes;
+      if (clearAllOverrides) {
+        const prev = savedSnapshot;
+        const clearedTokens = prev
+          ? buildClearColourOverridesPayload(prev.colourOverrides)
+          : {};
+        const clearedFamilies = prev
+          ? buildClearFontFamilyPayload(prev.fontFamilyOverrides)
+          : {};
+        const clearedSizes = prev
+          ? buildClearFontSizePayload(prev.fontSizeOverrides)
+          : {};
+        body.tokens =
+          Object.keys(clearedTokens).length > 0 ? clearedTokens : {};
+        body.fontFamilies =
+          Object.keys(clearedFamilies).length > 0 ? clearedFamilies : {};
+        body.fontSizes =
+          Object.keys(clearedSizes).length > 0 ? clearedSizes : {};
+      } else {
+        if (Object.keys(tokens).length > 0) body.tokens = tokens;
+        if (Object.keys(fontFamilies).length > 0) body.fontFamilies = fontFamilies;
+        if (Object.keys(fontSizes).length > 0) body.fontSizes = fontSizes;
+      }
       const updated = await themesApi.update(customerId, themeId, body);
-      const snap: Snapshot = {
-        themeName: updated.themeName,
-        colourOverrides: {},
-        fontFamilyOverrides: {},
-        fontSizeOverrides: {},
-      };
-      for (const [key, value] of Object.entries(updated.tokens)) {
-        const editorHex = fromApiHexColor(value);
-        if (DEFAULT_THEME[key] !== undefined && editorHex !== DEFAULT_THEME[key]) {
-          snap.colourOverrides[key] = editorHex;
-        }
-      }
-      for (const [key, value] of Object.entries(updated.font_tokens.families)) {
-        if (
-          DEFAULT_FONT_FAMILIES[key] !== undefined &&
-          value !== DEFAULT_FONT_FAMILIES[key]
-        ) {
-          snap.fontFamilyOverrides[key] = value;
-        }
-      }
-      for (const [key, value] of Object.entries(updated.font_tokens.sizes)) {
-        if (
-          DEFAULT_FONT_SIZES[key] !== undefined &&
-          value !== DEFAULT_FONT_SIZES[key]
-        ) {
-          snap.fontSizeOverrides[key] = value;
-        }
-      }
+      const snap = snapshotFromThemeResponse(updated);
       // Only the customer's active theme should ping mobile — trust API, not local state
       if (updated.isActive) {
         void firebaseApi.notifyThemeUpdated(customerId).catch(() => {});
@@ -331,8 +396,10 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
         fontSizeOverrides: { ...snap.fontSizeOverrides },
         isDirty: false,
         isSaving: false,
+        clearAllOverrides: false,
         savedSnapshot: cloneSnapshot(snap),
       });
+      return updated;
     } catch (err) {
       set({ isSaving: false });
       throw err;
@@ -356,6 +423,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       fontFamilyOverrides: { ...snap.fontFamilyOverrides },
       fontSizeOverrides: { ...snap.fontSizeOverrides },
       isDirty: false,
+      clearAllOverrides: false,
       selectedTokenKey: getFirstTokenKeyForCategory(state.selectedCategoryId),
     });
   },

@@ -26,6 +26,8 @@ export interface ThemeEditorState {
   selectedTokenKey: string | null;
   isDirty: boolean;
   isSaving: boolean;
+  /** After Reset all — save sends empty override maps to clear server state. */
+  clearAllOverrides: boolean;
 }
 
 export interface ColourPickerValue {

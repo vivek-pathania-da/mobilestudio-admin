@@ -1,12 +1,11 @@
 'use client';
 
-import Link from 'next/link';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Eye, EyeOff, Lock } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,9 +27,33 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginPageFallback />}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageFallback() {
+  return (
+    <div className="flex w-full flex-col items-center px-4 py-12">
+      <p className="text-sm text-muted-foreground">Loading…</p>
+    </div>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, isLoading, clearError } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
+  const sessionExpired = searchParams.get('reason') === 'session_expired';
+
+  useEffect(() => {
+    if (sessionExpired) {
+      clearError();
+    }
+  }, [sessionExpired, clearError]);
 
   const {
     register,
@@ -44,7 +67,6 @@ export default function LoginPage() {
     clearError();
     await login(data.email, data.password);
 
-    // Check store state after login attempt
     const state = useAuthStore.getState();
     if (state.isAuthenticated) {
       toast.success('Welcome back!');
@@ -56,7 +78,6 @@ export default function LoginPage() {
 
   return (
     <div className="flex w-full flex-col items-center px-4">
-      {/* Wordmark */}
       <div className="mb-8 flex items-center gap-2">
         <span
           className="text-xl font-bold tracking-tight"
@@ -72,7 +93,6 @@ export default function LoginPage() {
         </span>
       </div>
 
-      {/* Card — 400px wide, 24px radius */}
       <div
         className="w-full max-w-[400px] rounded-3xl border p-8"
         style={{
@@ -81,7 +101,6 @@ export default function LoginPage() {
           boxShadow: 'var(--shadow-md)',
         }}
       >
-        {/* Heading */}
         <div className="mb-6">
           <h1
             className="mb-1 text-[28px] font-bold tracking-tight"
@@ -95,11 +114,17 @@ export default function LoginPage() {
           >
             Internal operations portal
           </p>
+          {sessionExpired ? (
+            <p
+              className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              role="alert"
+            >
+              Your session has expired. Please sign in again.
+            </p>
+          ) : null}
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          {/* Email */}
           <div className="space-y-1.5">
             <Label
               htmlFor="email"
@@ -124,7 +149,6 @@ export default function LoginPage() {
             )}
           </div>
 
-          {/* Password */}
           <div className="space-y-1.5">
             <Label
               htmlFor="password"
@@ -167,7 +191,6 @@ export default function LoginPage() {
             )}
           </div>
 
-          {/* Submit — 46px tall, 8px radius */}
           <Button
             type="submit"
             className="mt-2 h-[46px] w-full rounded-md text-base font-semibold"
@@ -180,42 +203,10 @@ export default function LoginPage() {
             {isLoading ? 'Signing in...' : 'Sign in'}
           </Button>
         </form>
-
-        {/* Divider */}
-        <div
-          className="my-5 border-t"
-          style={{ borderColor: 'var(--color-border)' }}
-        />
-
-        {/* Security note */}
-        <div
-          className="flex items-center justify-center gap-2"
-          style={{ color: 'var(--color-text-tertiary)' }}
-        >
-          <Lock className="h-3.5 w-3.5 shrink-0" />
-          <span className="text-[13px]">
-            Secured by JWT authentication
-          </span>
-        </div>
       </div>
 
-      <p
-        className="mt-6 text-sm"
-        style={{ color: 'var(--color-text-tertiary)' }}
-      >
-        Need an account?{' '}
-        <Link
-          href="/signup"
-          className="font-medium hover:underline"
-          style={{ color: 'var(--color-primary)' }}
-        >
-          Sign up
-        </Link>
-      </p>
-
-      {/* System status */}
       <div
-        className="mt-4 flex items-center gap-1.5 text-[13px]"
+        className="mt-6 flex items-center gap-1.5 text-[13px]"
         style={{ color: 'var(--color-text-tertiary)' }}
       >
         <span>System Status:</span>

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AuthUser, LoginResult } from '@/types/api';
 import {
+  normalizeAccessToken,
   tokenStore,
   userStore,
   setRefreshTokenCookie,
@@ -37,7 +38,10 @@ function applyAdminLoginResult(
     return;
   }
 
-  tokenStore.setAccessToken(result.accessToken, result.expiresIn);
+  tokenStore.setAccessToken(
+    normalizeAccessToken(result.accessToken),
+    result.expiresIn
+  );
   setRefreshTokenCookie(result.refreshToken);
   userStore.setUserId(result.user.userId);
 

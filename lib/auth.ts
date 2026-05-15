@@ -6,9 +6,34 @@
 let _accessToken: string | null = null;
 let _tokenExpiry: number | null = null; // epoch ms
 
+/** Strip wrapping quotes / Bearer prefix from API token values. */
+export function normalizeAccessToken(raw: string): string {
+  let token = raw.trim();
+  if (
+    (token.startsWith('"') && token.endsWith('"')) ||
+    (token.startsWith("'") && token.endsWith("'"))
+  ) {
+    token = token.slice(1, -1).trim();
+  }
+  if (/^bearer\s+/i.test(token)) {
+    token = token.replace(/^bearer\s+/i, '').trim();
+  }
+  return token;
+}
+
+/** API Gateway JWT authorizers expect `Authorization: Bearer <token>`. */
+export function formatAuthorizationHeader(
+  accessToken: string,
+  tokenType = 'Bearer'
+): string {
+  const token = normalizeAccessToken(accessToken);
+  const scheme = tokenType.trim() || 'Bearer';
+  return `${scheme} ${token}`;
+}
+
 export const tokenStore = {
   setAccessToken(token: string, expiresInSeconds: number): void {
-    _accessToken = token;
+    _accessToken = normalizeAccessToken(token);
     _tokenExpiry = Date.now() + expiresInSeconds * 1000 - 30000;
     // subtract 30s buffer so we refresh before actual expiry
   },

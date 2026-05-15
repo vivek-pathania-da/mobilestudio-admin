@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, Loader2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -11,8 +11,11 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { customersApi } from '@/lib/api/customers.api';
+import { themeTokensLookMissing } from '@/lib/api/theme-cache';
 import { themesApi } from '@/lib/api/themes.api';
+import { ensureAccessToken } from '@/lib/auth/refresh-access-token';
 import { getApiErrorMessage } from '@/lib/api/client';
+import { invalidateCustomerThemes } from '@/lib/query/invalidate-customer-themes';
 import { useThemeEditorStore } from '@/stores/theme-editor.store';
 import { CategoryNav } from '@/components/theme-editor/CategoryNav';
 import { TokenList } from '@/components/theme-editor/TokenList';
@@ -30,13 +33,29 @@ export function ThemeEditorShell({
   customerName,
 }: ThemeEditorShellProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const initRef = useRef(false);
+
+  const themesListQuery = useQuery({
+    queryKey: ['themes', customerId],
+    queryFn: () => themesApi.listByCustomer(customerId),
+    enabled: !!customerId && !!themeId,
+  });
+
+  const themeMeta = themesListQuery.data?.find((t) => t.themeId === themeId);
 
   const themeQuery = useQuery({
     queryKey: ['theme-editor-theme', customerId, themeId],
-    queryFn: () => themesApi.getById(customerId, themeId),
+    queryFn: async () => {
+      await ensureAccessToken();
+      return themesApi.getById(customerId, themeId);
+    },
     enabled: !!customerId && !!themeId,
   });
+
+  const tokensFailedToLoad =
+    !!themeQuery.data &&
+    themeTokensLookMissing(themeQuery.data, themeMeta?.overrideCount);
 
   const customerQuery = useQuery({
     queryKey: ['customer', customerId],
@@ -86,8 +105,12 @@ export function ThemeEditorShell({
 
   const handleSave = async () => {
     try {
-      await save();
-      void themeQuery.refetch();
+      const updated = await save();
+      queryClient.setQueryData(
+        ['theme-editor-theme', customerId, themeId],
+        updated
+      );
+      invalidateCustomerThemes(queryClient, customerId);
       toast.success('Theme saved');
     } catch (e) {
       toast.error(getApiErrorMessage(e));
@@ -105,6 +128,7 @@ export function ThemeEditorShell({
     if (!ok) return;
     try {
       await activate();
+      invalidateCustomerThemes(queryClient, customerId);
       toast.success('Theme activated');
       void themeQuery.refetch();
     } catch (e) {
@@ -270,6 +294,17 @@ export function ThemeEditorShell({
           )}
         </div>
       </header>
+
+      {tokensFailedToLoad ? (
+        <div
+          className="shrink-0 border-b border-amber-200 bg-amber-50 px-6 py-2.5 text-sm text-amber-950"
+          role="alert"
+        >
+          Saved overrides for this theme could not be loaded. You are seeing
+          default colours only. Try signing out and back in, then reopen this
+          theme. Avoid saving or you may overwrite custom colours on the server.
+        </div>
+      ) : null}
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <CategoryNav />

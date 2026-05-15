@@ -176,6 +176,8 @@ export default function CustomerDetailPage() {
     queryKey: ['themes', customerId],
     queryFn: () => themesApi.listByCustomer(customerId),
     enabled,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const activeThemeQuery = useQuery({
@@ -183,6 +185,8 @@ export default function CustomerDetailPage() {
     queryFn: () => themesApi.getActive(customerId),
     enabled,
     retry: false,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const customer = customerQuery.data;
