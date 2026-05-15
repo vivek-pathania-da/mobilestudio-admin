@@ -1,23 +1,43 @@
 import { DEFAULT_THEME } from './default-theme';
 import { TOKEN_CATEGORIES } from './token-categories';
 
-export function hexToRgb(hex: string): { r: number; g: number; b: number; a: number } {
+/** Parse hex components. Editor uses RGBA (#RRGGBBAA); API uses ARGB (#AARRGGBB). */
+function parseHexComponents(
+  hex: string,
+  alphaPosition: 'rgba' | 'argb'
+): { r: number; g: number; b: number; a: number } {
   const raw = hex.trim().replace(/^#/, '');
   if (raw.length !== 6 && raw.length !== 8) {
     return { r: 0, g: 0, b: 0, a: 1 };
   }
-  const r = parseInt(raw.slice(0, 2), 16);
-  const g = parseInt(raw.slice(2, 4), 16);
-  const b = parseInt(raw.slice(4, 6), 16);
+  let r: number;
+  let g: number;
+  let b: number;
+  let a = 1;
+  if (raw.length === 8 && alphaPosition === 'argb') {
+    const ai = parseInt(raw.slice(0, 2), 16);
+    r = parseInt(raw.slice(2, 4), 16);
+    g = parseInt(raw.slice(4, 6), 16);
+    b = parseInt(raw.slice(6, 8), 16);
+    a = Number.isNaN(ai) ? 1 : ai / 255;
+  } else {
+    r = parseInt(raw.slice(0, 2), 16);
+    g = parseInt(raw.slice(2, 4), 16);
+    b = parseInt(raw.slice(4, 6), 16);
+    if (raw.length === 8) {
+      const ai = parseInt(raw.slice(6, 8), 16);
+      a = Number.isNaN(ai) ? 1 : ai / 255;
+    }
+  }
   if ([r, g, b].some((n) => Number.isNaN(n))) {
     return { r: 0, g: 0, b: 0, a: 1 };
   }
-  let a = 1;
-  if (raw.length === 8) {
-    const ai = parseInt(raw.slice(6, 8), 16);
-    a = Number.isNaN(ai) ? 1 : ai / 255;
-  }
   return { r, g, b, a };
+}
+
+/** Editor / CSS / picker — alpha last (#RRGGBBAA). */
+export function hexToRgb(hex: string): { r: number; g: number; b: number; a: number } {
+  return parseHexComponents(hex, 'rgba');
 }
 
 export function rgbToHex(r: number, g: number, b: number, a?: number): string {
@@ -46,7 +66,31 @@ export function isTransparent(hex: string): boolean {
   return false;
 }
 
-/** Hex string for HexAlphaColorPicker (always 8-digit, preserves RGB when alpha is 0). */
+/** API wire format (#RRGGBB or #AARRGGBB) → editor (#RRGGBB / #RRGGBBAA). */
+export function fromApiHexColor(hex: string): string {
+  const trimmed = hex.trim();
+  if (trimmed.toLowerCase() === 'transparent') {
+    return '#00000000';
+  }
+  const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+  if (!isValidHex(withHash)) return '#000000';
+  const raw = withHash.slice(1).toUpperCase();
+  if (raw.length === 6) return `#${raw}`;
+  const { r, g, b, a } = parseHexComponents(withHash, 'argb');
+  return rgbToHex(r, g, b, a);
+}
+
+/** Editor format → API (#RRGGBB or #AARRGGBB with alpha first). */
+export function toApiHexColor(hex: string): string {
+  const normalized = normalizeHexColor(hex);
+  const raw = normalized.slice(1).toUpperCase();
+  if (raw.length === 6) return `#${raw}`;
+  const rgb = raw.slice(0, 6);
+  const a = raw.slice(6, 8);
+  return `#${a}${rgb}`;
+}
+
+/** Hex string for HexAlphaColorPicker (editor RGBA, 8-digit when needed). */
 export function toPickerHex(value: string): string {
   const trimmed = value.trim();
   const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
@@ -115,10 +159,15 @@ export function buildOverridesPayload(
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(overrides)) {
     if (v !== DEFAULT_THEME[k]) {
-      out[k] = v;
+      out[k] = toApiHexColor(v);
     }
   }
   return out;
+}
+
+/** CSS `background-color` from API or editor hex. */
+export function toCssHexColor(hex: string): string {
+  return fromApiHexColor(hex);
 }
 
 export function findTokenCategory(tokenKey: string): {

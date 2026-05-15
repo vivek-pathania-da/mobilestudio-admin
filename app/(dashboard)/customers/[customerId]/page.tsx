@@ -37,6 +37,7 @@ import { EditCustomerSheet } from '@/components/customers/edit-customer-sheet';
 import { ChurnCustomerDialog } from '@/components/customers/customer-dialogs';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { statusConfig } from '@/lib/design-system';
+import { toCssHexColor } from '@/lib/theme-editor/theme-editor.utils';
 import { cn } from '@/lib/utils';
 
 const UUID_REGEX =
@@ -116,9 +117,12 @@ function statusLabel(s: CustomerStatus): string {
 function tokenHexColors(tokens: ThemeTokenMap | undefined, max = 7): string[] {
   if (!tokens) return [];
   return Object.values(tokens)
-    .filter((v) =>
-      typeof v === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim())
+    .filter(
+      (v) =>
+        typeof v === 'string' &&
+        /^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(v.trim())
     )
+    .map((v) => toCssHexColor(v))
     .slice(0, max);
 }
 

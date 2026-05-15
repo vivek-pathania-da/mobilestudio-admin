@@ -3260,7 +3260,7 @@ components:
       type: object
       additionalProperties:
         type: string
-      description: Map of design token key to hex color (#RRGGBB or #RRGGBBAA).
+      description: Map of design token key to hex color (#RRGGBB or #AARRGGBB with alpha first).
 
     ThemeFontFamilyMap:
       type: object

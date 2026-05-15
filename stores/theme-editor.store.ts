@@ -14,7 +14,10 @@ import {
 import type { ThemeEditorState } from '@/lib/theme-editor/theme-editor.types';
 import type { UpdateThemeRequest } from '@/types/api';
 import { TOKEN_CATEGORIES } from '@/lib/theme-editor/token-categories';
-import { getFirstTokenKeyForCategory } from '@/lib/theme-editor/theme-editor.utils';
+import {
+  fromApiHexColor,
+  getFirstTokenKeyForCategory,
+} from '@/lib/theme-editor/theme-editor.utils';
 
 type Snapshot = {
   themeName: string;
@@ -123,8 +126,9 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
   ) => {
     const colourOverrides: Record<string, string> = {};
     for (const [key, value] of Object.entries(tokens)) {
-      if (DEFAULT_THEME[key] !== undefined && value !== DEFAULT_THEME[key]) {
-        colourOverrides[key] = value;
+      const editorHex = fromApiHexColor(value);
+      if (DEFAULT_THEME[key] !== undefined && editorHex !== DEFAULT_THEME[key]) {
+        colourOverrides[key] = editorHex;
       }
     }
 
@@ -293,8 +297,9 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
         fontSizeOverrides: {},
       };
       for (const [key, value] of Object.entries(updated.tokens)) {
-        if (DEFAULT_THEME[key] !== undefined && value !== DEFAULT_THEME[key]) {
-          snap.colourOverrides[key] = value;
+        const editorHex = fromApiHexColor(value);
+        if (DEFAULT_THEME[key] !== undefined && editorHex !== DEFAULT_THEME[key]) {
+          snap.colourOverrides[key] = editorHex;
         }
       }
       for (const [key, value] of Object.entries(updated.font_tokens.families)) {
