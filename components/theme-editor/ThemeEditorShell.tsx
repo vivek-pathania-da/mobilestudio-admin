@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, Loader2, Pencil, Sparkles, Undo2 } from 'lucide-react';
+import { ChevronRight, Eye, Loader2, Pencil, Sparkles, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -21,6 +21,7 @@ import { CategoryNav } from '@/components/theme-editor/CategoryNav';
 import { TokenList } from '@/components/theme-editor/TokenList';
 import { ColourEditorPanel } from '@/components/theme-editor/ColourEditorPanel';
 import { AiGeneratorModal } from '@/components/theme-editor/AiGeneratorModal';
+import { ThemePreviewModal } from '@/components/theme-editor/ThemePreviewModal';
 
 export interface ThemeEditorShellProps {
   customerId: string;
@@ -75,6 +76,7 @@ export function ThemeEditorShell({
   const save = useThemeEditorStore((s) => s.save);
   const activate = useThemeEditorStore((s) => s.activate);
   const openAiModal = useThemeEditorStore((s) => s.openAiModal);
+  const openPreviewModal = useThemeEditorStore((s) => s.openPreviewModal);
   const canUndoAi = useThemeEditorStore((s) => s.canUndoAi);
   const undoAiTheme = useThemeEditorStore((s) => s.undoAiTheme);
   const colourOverrides = useThemeEditorStore((s) => s.colourOverrides);
@@ -281,25 +283,47 @@ export function ThemeEditorShell({
           ) : null}
           <button
             type="button"
-            onClick={openAiModal}
+            onClick={openPreviewModal}
+            aria-label="Preview theme"
+            title="Preview"
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
+              justifyContent: 'center',
+              width: 36,
               height: 36,
-              padding: '0 14px',
+              padding: 0,
+              borderRadius: 8,
+              border: '1px solid #E2E8F0',
+              background: '#FFF',
+              cursor: 'pointer',
+              color: '#374151',
+              flexShrink: 0,
+            }}
+          >
+            <Eye size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={openAiModal}
+            aria-label="Generate with AI"
+            title="Generate with AI"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 36,
+              height: 36,
+              padding: 0,
               borderRadius: 8,
               border: 'none',
               cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 500,
               color: '#FFFFFF',
-              fontFamily: 'inherit',
-              background: 'linear-gradient(135deg, #2563EB, #7C3AED)',
+              flexShrink: 0,
+              background: 'var(--color-primary)',
             }}
           >
-            <Sparkles size={14} />
-            Generate with AI
+            <Sparkles size={16} />
           </button>
           <Button
             type="button"
@@ -368,6 +392,7 @@ export function ThemeEditorShell({
       </div>
     </div>
     <AiGeneratorModal />
+    <ThemePreviewModal />
     {dialogProps ? <ConfirmDialog {...dialogProps} /> : null}
     </>
   );

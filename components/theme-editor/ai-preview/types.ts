@@ -1,8 +1,3 @@
-export type AiPreviewSlide =
-  | 'home'
-  | 'typography'
-  | 'buttons'
-  | 'status'
-  | 'navigation';
+export type AiPreviewSlide = 'dashboard' | 'form' | 'alerts' | 'typography';
 
 export type TokenMap = Record<string, string>;

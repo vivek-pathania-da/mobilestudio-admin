@@ -1,25 +1,22 @@
 'use client';
 
 import { PhoneFrame } from './PhoneFrame';
-import { HomeSlide } from './slides/HomeSlide';
+import { DashboardSlide } from './slides/DashboardSlide';
+import { FormSlide } from './slides/FormSlide';
+import { AlertsSlide } from './slides/AlertsSlide';
 import { TypographySlide } from './slides/TypographySlide';
-import { ButtonsSlide } from './slides/ButtonsSlide';
-import { StatusSlide } from './slides/StatusSlide';
-import { NavigationSlide } from './slides/NavigationSlide';
-
-type Slide = 'home' | 'typography' | 'buttons' | 'status' | 'navigation';
+import type { AiPreviewSlide } from './types';
 
 type Props = {
   tokens: Record<string, string>;
-  slide: Slide;
+  slide: AiPreviewSlide;
 };
 
 const SLIDE_MAP = {
-  home: HomeSlide,
+  dashboard: DashboardSlide,
+  form: FormSlide,
+  alerts: AlertsSlide,
   typography: TypographySlide,
-  buttons: ButtonsSlide,
-  status: StatusSlide,
-  navigation: NavigationSlide,
 };
 
 export function AiPreviewPhone({ tokens, slide }: Props) {

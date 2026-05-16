@@ -165,6 +165,10 @@ interface ThemeEditorStore extends ThemeEditorState {
   preAiFontSizeOverrides: Record<string, number> | null;
   canUndoAi: boolean;
 
+  previewModalOpen: boolean;
+  openPreviewModal: () => void;
+  closePreviewModal: () => void;
+
   openAiModal: () => void;
   closeAiModal: () => void;
   clearAiResult: () => void;
@@ -199,6 +203,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
   preAiFontFamilyOverrides: null,
   preAiFontSizeOverrides: null,
   canUndoAi: false,
+  previewModalOpen: false,
 
   initialise: (
     customerId,
@@ -432,6 +437,10 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       throw err;
     }
   },
+
+  openPreviewModal: () => set({ previewModalOpen: true }),
+
+  closePreviewModal: () => set({ previewModalOpen: false }),
 
   openAiModal: () => set({ aiModalOpen: true, aiResult: null, aiError: null }),
 

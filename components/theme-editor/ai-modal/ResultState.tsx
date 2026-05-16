@@ -1,6 +1,7 @@
 'use client';
 
 import { RotateCcw, Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { AiPreviewSlides } from '../ai-preview/AiPreviewSlides';
 import { PaletteStrip } from '../ai-preview/PaletteStrip';
 import type { AiGenerateResponse } from '@/types/api';
@@ -51,58 +52,29 @@ export function ResultState({ result, onRegenerate, onNewPrompt }: Props) {
           >
             <RotateCcw size={13} /> Regenerate
           </button>
-          <button
+          <Button
             type="button"
+            variant="link"
+            className="h-9 w-[130px] gap-1.5 text-primary"
             onClick={onNewPrompt}
-            style={{
-              width: 130,
-              height: 36,
-              border: 'none',
-              background: 'transparent',
-              cursor: 'pointer',
-              fontSize: 13,
-              color: '#2563EB',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              fontFamily: 'inherit',
-            }}
           >
-            <Plus size={13} /> New prompt
-          </button>
+            <Plus className="size-3.5" />
+            New prompt
+          </Button>
         </div>
       </div>
-      <div
+      <p
         style={{
+          margin: 0,
           padding: '16px 24px 0',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
+          fontSize: 12,
+          fontStyle: 'italic',
+          color: '#6B7280',
+          lineHeight: 1.5,
         }}
       >
-        <span
-          style={{
-            fontSize: 10,
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            color: '#9CA3AF',
-          }}
-        >
-          PREVIEW
-        </span>
-        <span
-          style={{
-            fontSize: 12,
-            fontStyle: 'italic',
-            color: '#6B7280',
-            maxWidth: 300,
-            textAlign: 'right',
-          }}
-        >
-          {result.description}
-        </span>
-      </div>
+        {result.description}
+      </p>
       <section style={{ padding: '16px 24px' }}>
         <AiPreviewSlides tokens={result.tokens} />
       </section>

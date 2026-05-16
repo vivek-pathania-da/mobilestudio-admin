@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 type Props = {
   onGenerate: (prompt: string) => void;
@@ -13,17 +14,9 @@ export function PromptInput({ onGenerate, initialPrompt = '' }: Props) {
   const canSubmit = prompt.trim().length >= 5;
 
   return (
-    <section style={{ padding: 24, borderBottom: '1px solid #E2E8F0' }}>
-      <p
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          color: '#9CA3AF',
-          marginBottom: 8,
-        }}
-      >
-        DESCRIBE YOUR THEME
+    <section className="border-b border-border px-6 py-6">
+      <p className="mb-2 text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
+        Describe your theme
       </p>
       <textarea
         value={prompt}
@@ -31,58 +24,20 @@ export function PromptInput({ onGenerate, initialPrompt = '' }: Props) {
         maxLength={500}
         autoFocus
         placeholder="e.g. luxury airline with dark navy and gold accents for Christmas"
-        style={{
-          width: '100%',
-          minHeight: 80,
-          border: '1px solid #E2E8F0',
-          borderRadius: 8,
-          padding: 12,
-          fontSize: 14,
-          fontFamily: 'inherit',
-          resize: 'none',
-          outline: 'none',
-          boxSizing: 'border-box',
-          color: '#374151',
-        }}
-        onFocus={(e) => {
-          e.target.style.borderColor = '#2563EB';
-        }}
-        onBlur={(e) => {
-          e.target.style.borderColor = '#E2E8F0';
-        }}
+        className="box-border min-h-20 w-full resize-none rounded-lg border border-border bg-white px-3 py-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       />
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-        }}
-      >
-        <span style={{ fontSize: 12, color: '#9CA3AF' }}>{prompt.length} / 500</span>
-        <button
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{prompt.length} / 500</span>
+        <Button
           type="button"
-          onClick={() => onGenerate(prompt)}
+          size="lg"
+          className="h-10 gap-1.5 px-5"
           disabled={!canSubmit}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '0 20px',
-            height: 40,
-            borderRadius: 8,
-            border: 'none',
-            cursor: canSubmit ? 'pointer' : 'not-allowed',
-            background: canSubmit ? '#2563EB' : '#E2E8F0',
-            color: canSubmit ? '#FFFFFF' : '#9CA3AF',
-            fontSize: 14,
-            fontWeight: 500,
-            fontFamily: 'inherit',
-          }}
+          onClick={() => onGenerate(prompt)}
         >
-          <Sparkles size={14} />
+          <Sparkles className="size-3.5" />
           Generate Theme →
-        </button>
+        </Button>
       </div>
     </section>
   );

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 import { useThemeEditorStore } from '@/stores/theme-editor.store';
 import { PromptInput } from './ai-modal/PromptInput';
 import { LoadingState } from './ai-modal/LoadingState';
@@ -50,7 +51,7 @@ export function AiGeneratorModal() {
         <div style={{ height: 56, borderBottom: '1px solid #E2E8F0', padding: '0 24px',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Sparkles size={16} color="#2563EB" />
+            <Sparkles size={16} className="text-primary" />
             <span style={{ fontSize: 15, fontWeight: 600, color: '#0F172A' }}>AI Theme Generator</span>
           </div>
           <button type="button" onClick={closeAiModal}
@@ -82,20 +83,15 @@ export function AiGeneratorModal() {
             {aiResult ? 'Applying replaces all colour tokens. Undo is available immediately.' : ''}
           </span>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" onClick={closeAiModal}
-              style={{ height: 36, padding: '0 16px', border: 'none', background: 'none',
-                cursor: 'pointer', fontSize: 13, color: '#6B7280', fontFamily: 'inherit' }}>
+            <Button type="button" variant="ghost" onClick={closeAiModal}>
               Discard
-            </button>
-            {aiResult && (
-              <button type="button" onClick={handleApply}
-                style={{ height: 36, padding: '0 20px', borderRadius: 8, border: 'none',
-                  background: '#2563EB', color: '#FFF', cursor: 'pointer', fontSize: 13,
-                  fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
-                <Sparkles size={12} />
+            </Button>
+            {aiResult ? (
+              <Button type="button" onClick={handleApply} className="gap-1.5">
+                <Sparkles className="size-3" />
                 Apply to Editor
-              </button>
-            )}
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
