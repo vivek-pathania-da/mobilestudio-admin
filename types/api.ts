@@ -180,6 +180,35 @@ export interface UpdateThemeRequest {
   fontSizes?: ThemeFontSizeMap;
 }
 
+export interface AiGenerateRequest {
+  prompt: string;
+  customerId?: string;
+}
+
+export interface AiPalette {
+  primary: string;
+  primaryLight: string;
+  primaryDark: string;
+  secondary: string;
+  accent: string;
+  background: string;
+  surface: string;
+  textPrimary: string;
+  success: string;
+  error: string;
+  warning: string;
+  sidebar: string;
+}
+
+export interface AiGenerateResponse {
+  palette: AiPalette;
+  tokens: Record<string, string>;
+  fontFamilies: Record<string, string>;
+  fontSizes: Record<string, number>;
+  description: string;
+  promptUsed: string;
+}
+
 // ── Pagination (shared client convention) ───────────────
 export interface PaginationParams {
   limit?: number;

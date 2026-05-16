@@ -59,7 +59,8 @@ tags:
   - name: Theme
     description: >
       Per-customer theme overrides and activation. GET active theme is public; all other theme
-      routes require a JWT with role admin.
+      routes require a JWT with role admin. AI theme generation (Bedrock) returns a full token map
+      without persisting to DynamoDB.
 paths:
   /v1/auth/signup:
     post:
@@ -1785,6 +1786,74 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /v1/themes/ai-generate:
+    post:
+      summary: Generate theme from AI prompt (admin)
+      description: >
+        Calls AWS Bedrock (Claude) to produce a 12-colour base palette from a natural-language brief,
+        then derives all design tokens mathematically on the server. Does **not** write to DynamoDB —
+        the client applies the result in the theme editor; the user saves manually if desired.
+        Requires admin JWT. Typical latency is several seconds (Bedrock + derivation).
+      tags: [Theme]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiGenerateThemeRequest'
+            example:
+              prompt: Modern aviation brand with navy blue and gold accents
+              customerId: a1b2c3d4-e5f6-4789-a012-3456789abcde
+      responses:
+        '200':
+          description: Generated palette and full resolved token map
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/AiGenerateThemeResponse'
+        '400':
+          description: Validation error (e.g. prompt too short)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Bedrock throttled — retry shortly
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: AI service is busy. Please try again in a moment.
+        '503':
+          description: Bedrock unavailable or invalid AI response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /v1/themes/{customerId}:
     get:
       summary: Get resolved active theme for a customer (public)
@@ -1918,53 +1987,9 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /v1/themes/{customerId}/{themeId}:
-    get:
-      summary: Get a theme by id (admin)
-      description: Returns the full resolved token map for a specific theme (defaults merged with overrides).
-      tags: [Theme]
-      security:
-        - BearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/ThemeCustomerId'
-        - $ref: '#/components/parameters/ThemeId'
-      responses:
-        '200':
-          description: Resolved theme
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/ThemeResponse'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Caller is not admin
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Theme not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
     put:
       summary: Update a theme (admin)
-      description: >
-        Token updates are merged with existing overrides unless an empty map is sent
-        (`tokens`, `fontFamilies`, or `fontSizes` as `{}`), which clears all overrides in that map.
-        version increments on each save.
+      description: Token updates are merged with existing overrides. version increments on each save.
       tags: [Theme]
       security:
         - BearerAuth: []
@@ -3300,11 +3325,85 @@ components:
         role:
           $ref: '#/components/schemas/UserRole'
 
+    AiGenerateThemeRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 5
+          maxLength: 500
+          description: Natural-language brand or style brief for the colour palette.
+        customerId:
+          type: string
+          format: uuid
+          description: Optional tenant id for server logs only; no data is stored.
+
+    AiBasePalette:
+      type: object
+      description: Twelve base colours returned by Bedrock; all other tokens are derived from these.
+      required:
+        - primary
+        - primaryLight
+        - primaryDark
+        - secondary
+        - accent
+        - background
+        - surface
+        - textPrimary
+        - success
+        - error
+        - warning
+        - sidebar
+      properties:
+        primary: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', example: '#1D4ED8' }
+        primaryLight: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        primaryDark: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        secondary: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        accent: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        background: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        surface: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        textPrimary: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        success: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', description: Green family (hue 90–150°).' }
+        error: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', description: Red family.' }
+        warning: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', description: Amber family (hue 25–55°).' }
+        sidebar: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', description: Drawer / nav background.' }
+
+    AiGenerateThemeResponse:
+      type: object
+      required:
+        - palette
+        - tokens
+        - fontFamilies
+        - fontSizes
+        - description
+        - promptUsed
+      properties:
+        palette:
+          $ref: '#/components/schemas/AiBasePalette'
+        tokens:
+          $ref: '#/components/schemas/ThemeTokenMap'
+          description: Full derived token map (~312 keys) merged with defaults and fixed transparency tokens.
+        fontFamilies:
+          $ref: '#/components/schemas/ThemeFontFamilyMap'
+          description: Default font families (AI does not change fonts in v1).
+        fontSizes:
+          $ref: '#/components/schemas/ThemeFontSizeMap'
+          description: Default font sizes (AI does not change sizes in v1).
+        description:
+          type: string
+          description: >-
+            One-line summary from the model (after DESCRIPTION line in Bedrock output).
+          example: Navy and gold aviation theme with high-contrast surfaces.
+        promptUsed:
+          type: string
+          description: Trimmed prompt sent to Bedrock.
+
     ThemeTokenMap:
       type: object
       additionalProperties:
         type: string
-      description: Map of design token key to hex color (#RRGGBB or #AARRGGBB with alpha first).
+      description: Map of design token key to hex color (#RRGGBB or #RRGGBBAA).
 
     ThemeFontFamilyMap:
       type: object

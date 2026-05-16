@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, Loader2, Pencil } from 'lucide-react';
+import { ChevronRight, Loader2, Pencil, Sparkles, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -20,6 +20,7 @@ import { useThemeEditorStore } from '@/stores/theme-editor.store';
 import { CategoryNav } from '@/components/theme-editor/CategoryNav';
 import { TokenList } from '@/components/theme-editor/TokenList';
 import { ColourEditorPanel } from '@/components/theme-editor/ColourEditorPanel';
+import { AiGeneratorModal } from '@/components/theme-editor/AiGeneratorModal';
 
 export interface ThemeEditorShellProps {
   customerId: string;
@@ -73,6 +74,9 @@ export function ThemeEditorShell({
   const discard = useThemeEditorStore((s) => s.discard);
   const save = useThemeEditorStore((s) => s.save);
   const activate = useThemeEditorStore((s) => s.activate);
+  const openAiModal = useThemeEditorStore((s) => s.openAiModal);
+  const canUndoAi = useThemeEditorStore((s) => s.canUndoAi);
+  const undoAiTheme = useThemeEditorStore((s) => s.undoAiTheme);
   const colourOverrides = useThemeEditorStore((s) => s.colourOverrides);
   const fontFamilyOverrides = useThemeEditorStore((s) => s.fontFamilyOverrides);
   const fontSizeOverrides = useThemeEditorStore((s) => s.fontSizeOverrides);
@@ -252,6 +256,51 @@ export function ThemeEditorShell({
             Reset all
           </button>
           <span className="h-6 w-px bg-border" />
+          {canUndoAi ? (
+            <button
+              type="button"
+              onClick={undoAiTheme}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                height: 36,
+                padding: '0 14px',
+                borderRadius: 8,
+                border: '1px solid #E2E8F0',
+                background: '#FFF',
+                cursor: 'pointer',
+                fontSize: 13,
+                color: '#374151',
+                fontFamily: 'inherit',
+              }}
+            >
+              <Undo2 size={14} />
+              Undo AI
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={openAiModal}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 36,
+              padding: '0 14px',
+              borderRadius: 8,
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 500,
+              color: '#FFFFFF',
+              fontFamily: 'inherit',
+              background: 'linear-gradient(135deg, #2563EB, #7C3AED)',
+            }}
+          >
+            <Sparkles size={14} />
+            Generate with AI
+          </button>
           <Button
             type="button"
             variant="outline"
@@ -318,6 +367,7 @@ export function ThemeEditorShell({
         </div>
       </div>
     </div>
+    <AiGeneratorModal />
     {dialogProps ? <ConfirmDialog {...dialogProps} /> : null}
     </>
   );

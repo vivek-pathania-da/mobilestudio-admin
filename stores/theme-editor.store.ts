@@ -1,6 +1,8 @@
 'use client';
 
 import { create } from 'zustand';
+import { aiThemeApi } from '@/lib/api/ai-theme.api';
+import { getApiErrorMessage } from '@/lib/api/client';
 import { firebaseApi } from '@/lib/api/firebase.api';
 import { themesApi } from '@/lib/api/themes.api';
 import {
@@ -13,7 +15,7 @@ import {
   buildOverridesPayload,
 } from '@/lib/theme-editor/theme-editor.utils';
 import type { ThemeEditorState } from '@/lib/theme-editor/theme-editor.types';
-import type { ThemeResponse, UpdateThemeRequest } from '@/types/api';
+import type { AiGenerateResponse, ThemeResponse, UpdateThemeRequest } from '@/types/api';
 import { TOKEN_CATEGORIES } from '@/lib/theme-editor/token-categories';
 import {
   fromApiHexColor,
@@ -153,6 +155,22 @@ interface ThemeEditorStore extends ThemeEditorState {
   getTokenValue: (tokenKey: string) => string;
   getOverrideCount: () => number;
   isTokenModified: (tokenKey: string) => boolean;
+
+  aiModalOpen: boolean;
+  aiLoading: boolean;
+  aiResult: AiGenerateResponse | null;
+  aiError: string | null;
+  preAiColourOverrides: Record<string, string> | null;
+  preAiFontFamilyOverrides: Record<string, string> | null;
+  preAiFontSizeOverrides: Record<string, number> | null;
+  canUndoAi: boolean;
+
+  openAiModal: () => void;
+  closeAiModal: () => void;
+  clearAiResult: () => void;
+  generateAiTheme: (prompt: string, customerId?: string) => Promise<void>;
+  applyAiTheme: () => void;
+  undoAiTheme: () => void;
 }
 
 const INITIAL_CATEGORY = 'brand';
@@ -173,6 +191,14 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
   isSaving: false,
   clearAllOverrides: false,
   savedSnapshot: null,
+  aiModalOpen: false,
+  aiLoading: false,
+  aiResult: null,
+  aiError: null,
+  preAiColourOverrides: null,
+  preAiFontFamilyOverrides: null,
+  preAiFontSizeOverrides: null,
+  canUndoAi: false,
 
   initialise: (
     customerId,
@@ -397,6 +423,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
         isDirty: false,
         isSaving: false,
         clearAllOverrides: false,
+        canUndoAi: false,
         savedSnapshot: cloneSnapshot(snap),
       });
       return updated;
@@ -404,6 +431,99 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       set({ isSaving: false });
       throw err;
     }
+  },
+
+  openAiModal: () => set({ aiModalOpen: true, aiResult: null, aiError: null }),
+
+  closeAiModal: () => set({ aiModalOpen: false, aiLoading: false }),
+
+  clearAiResult: () => set({ aiResult: null, aiError: null }),
+
+  generateAiTheme: async (prompt: string, customerId?: string) => {
+    set({ aiLoading: true, aiError: null, aiResult: null });
+    try {
+      const result = await aiThemeApi.generate({ prompt, customerId });
+      set({ aiLoading: false, aiResult: result });
+    } catch (err: unknown) {
+      set({
+        aiLoading: false,
+        aiError: getApiErrorMessage(err),
+      });
+    }
+  },
+
+  applyAiTheme: () => {
+    const {
+      aiResult,
+      colourOverrides,
+      fontFamilyOverrides,
+      fontSizeOverrides,
+    } = get();
+    if (!aiResult) return;
+
+    set({
+      preAiColourOverrides: { ...colourOverrides },
+      preAiFontFamilyOverrides: { ...fontFamilyOverrides },
+      preAiFontSizeOverrides: { ...fontSizeOverrides },
+    });
+
+    const newColourOverrides: Record<string, string> = {};
+    for (const [key, value] of Object.entries(aiResult.tokens)) {
+      const editorHex = fromApiHexColor(value);
+      if (DEFAULT_THEME[key] !== undefined && editorHex !== DEFAULT_THEME[key]) {
+        newColourOverrides[key] = editorHex;
+      }
+    }
+
+    const newFontFamilyOverrides: Record<string, string> = {};
+    for (const [key, value] of Object.entries(aiResult.fontFamilies)) {
+      if (
+        DEFAULT_FONT_FAMILIES[key] !== undefined &&
+        value !== DEFAULT_FONT_FAMILIES[key]
+      ) {
+        newFontFamilyOverrides[key] = value;
+      }
+    }
+
+    const newFontSizeOverrides: Record<string, number> = {};
+    for (const [key, value] of Object.entries(aiResult.fontSizes)) {
+      if (
+        DEFAULT_FONT_SIZES[key] !== undefined &&
+        value !== DEFAULT_FONT_SIZES[key]
+      ) {
+        newFontSizeOverrides[key] = value;
+      }
+    }
+
+    set({
+      colourOverrides: newColourOverrides,
+      fontFamilyOverrides: newFontFamilyOverrides,
+      fontSizeOverrides: newFontSizeOverrides,
+      isDirty: true,
+      canUndoAi: true,
+      aiModalOpen: false,
+      aiResult: null,
+    });
+  },
+
+  undoAiTheme: () => {
+    const {
+      preAiColourOverrides,
+      preAiFontFamilyOverrides,
+      preAiFontSizeOverrides,
+    } = get();
+    if (!preAiColourOverrides) return;
+
+    set({
+      colourOverrides: preAiColourOverrides,
+      fontFamilyOverrides: preAiFontFamilyOverrides ?? {},
+      fontSizeOverrides: preAiFontSizeOverrides ?? {},
+      isDirty: true,
+      canUndoAi: false,
+      preAiColourOverrides: null,
+      preAiFontFamilyOverrides: null,
+      preAiFontSizeOverrides: null,
+    });
   },
 
   activate: async () => {
