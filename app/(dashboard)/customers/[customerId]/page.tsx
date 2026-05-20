@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -32,12 +32,15 @@ import { customersApi } from '@/lib/api/customers.api';
 import { firebaseApi } from '@/lib/api/firebase.api';
 import { themesApi } from '@/lib/api/themes.api';
 import { getApiErrorMessage } from '@/lib/api/client';
-import type { Customer, CustomerStatus, ThemeListItem, ThemeTokenMap, ThemeFontTokens } from '@/types/api';
+import type { Customer, CustomerStatus, ThemeListItem, ThemeFontTokens, ThemeResponse } from '@/types/api';
 import { EditCustomerSheet } from '@/components/customers/edit-customer-sheet';
 import { ChurnCustomerDialog } from '@/components/customers/customer-dialogs';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { statusConfig } from '@/lib/design-system';
-import { toCssHexColor } from '@/lib/theme-editor/theme-editor.utils';
+import {
+  getBrandPreviewSwatches,
+} from '@/lib/theme-editor/brand-preview-swatches';
+import { isTransparent } from '@/lib/theme-editor/theme-editor.utils';
 import { cn } from '@/lib/utils';
 
 const UUID_REGEX =
@@ -112,18 +115,6 @@ function statusBadgeClass(s: CustomerStatus): string {
 
 function statusLabel(s: CustomerStatus): string {
   return s.toUpperCase();
-}
-
-function tokenHexColors(tokens: ThemeTokenMap | undefined, max = 7): string[] {
-  if (!tokens) return [];
-  return Object.values(tokens)
-    .filter(
-      (v) =>
-        typeof v === 'string' &&
-        /^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(v.trim())
-    )
-    .map((v) => toCssHexColor(v))
-    .slice(0, max);
 }
 
 function hashSwatches(seed: string, count = 6): string[] {
@@ -216,19 +207,74 @@ export default function CustomerDetailPage() {
 
   const resolvedActive = activeThemeQuery.data;
 
-  const themeCards = useMemo(() => {
-    const list = themesQuery.data ?? [];
-    return list.map((item) => {
-      const isSameAsResolved =
-        resolvedActive && resolvedActive.themeId === item.themeId;
-      const tokens = isSameAsResolved ? resolvedActive.tokens : undefined;
-      const fonts = isSameAsResolved ? resolvedActive.font_tokens : undefined;
-      const hexes = tokenHexColors(tokens);
-      const swatches =
-        hexes.length > 0 ? hexes : hashSwatches(item.themeId + item.themeName);
-      return { item, swatches, fonts };
+  const themesList = themesQuery.data ?? [];
+
+  const themesToResolve = useMemo((): ThemeListItem[] => {
+    if (!themesList.length) return [];
+    const coveredId = resolvedActive?.themeId;
+    const coveredInList =
+      !!coveredId && themesList.some((t) => t.themeId === coveredId);
+    if (!coveredInList) {
+      return [...themesList];
+    }
+    return themesList.filter((t) => t.themeId !== coveredId);
+  }, [themesList, resolvedActive?.themeId]);
+
+  const themeSummariesQuery = useQueries({
+    queries: themesToResolve.map((item) => ({
+      queryKey: ['theme-editor-theme', customerId, item.themeId],
+      queryFn: () => themesApi.resolveFromListMeta(customerId, item),
+      enabled: enabled && validId && themesList.length > 0,
+      staleTime: 5 * 60 * 1000,
+      retry: 1,
+    })),
+  });
+
+  const queryByThemeId = useMemo(() => {
+    const m = new Map<string, (typeof themeSummariesQuery)[number]>();
+    themesToResolve.forEach((item, i) => {
+      m.set(item.themeId, themeSummariesQuery[i]);
     });
-  }, [themesQuery.data, resolvedActive]);
+    return m;
+  }, [themesToResolve, themeSummariesQuery]);
+
+  const themeSummaryById = useMemo(() => {
+    const map = new Map<string, ThemeResponse>();
+    if (resolvedActive) {
+      map.set(resolvedActive.themeId, resolvedActive);
+    }
+    themesToResolve.forEach((item, i) => {
+      const data = themeSummariesQuery[i]?.data;
+      if (data) map.set(item.themeId, data);
+    });
+    return map;
+  }, [resolvedActive, themesToResolve, themeSummariesQuery]);
+
+  const themeCards = useMemo(() => {
+    return themesList.map((item) => {
+      const resolvedId = resolvedActive?.themeId;
+      const satisfiedByActiveApi = !!resolvedActive && resolvedId === item.themeId;
+      const q = satisfiedByActiveApi ? undefined : queryByThemeId.get(item.themeId);
+      const summary = themeSummaryById.get(item.themeId);
+      const loadFailed = !!q?.isError;
+      const summaryReady = summary !== undefined || loadFailed;
+      const brand = getBrandPreviewSwatches(summary?.tokens);
+      const swatches =
+        brand.length > 0
+          ? brand
+          : summaryReady
+            ? hashSwatches(item.themeId + item.themeName)
+            : [];
+      const fonts = summaryReady && summary ? summary.font_tokens : undefined;
+      const swatchesLoading = !summaryReady;
+      return {
+        item,
+        swatches,
+        fonts,
+        swatchesLoading,
+      };
+    });
+  }, [themesList, themeSummaryById, queryByThemeId, resolvedActive?.themeId]);
 
   if (!validId) {
     return (
@@ -449,12 +495,13 @@ export default function CustomerDetailPage() {
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {themeCards.map(({ item, swatches, fonts }) => (
+            {themeCards.map(({ item, swatches, fonts, swatchesLoading }) => (
               <ThemeSummaryCard
                 key={item.themeId}
                 customerId={customerId}
                 item={item}
                 swatches={swatches}
+                swatchesLoading={swatchesLoading}
                 typography={formatFontLine(fonts)}
                 activating={
                   activateMutation.isPending &&
@@ -511,6 +558,7 @@ function ThemeSummaryCard({
   customerId,
   item,
   swatches,
+  swatchesLoading,
   typography,
   activating,
   onActivate,
@@ -522,6 +570,7 @@ function ThemeSummaryCard({
   customerId: string;
   item: ThemeListItem;
   swatches: string[];
+  swatchesLoading: boolean;
   typography: string;
   activating: boolean;
   onActivate: () => void;
@@ -567,15 +616,35 @@ function ThemeSummaryCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3 pt-0">
-        <div className="flex flex-wrap gap-1.5" aria-label="Color preview">
-          {swatches.map((c, i) => (
-            <span
-              key={i}
-              className="size-7 shrink-0 rounded-full border border-black/10 shadow-inner"
-              style={{ backgroundColor: c }}
-              title={c}
-            />
-          ))}
+        <div className="flex flex-wrap gap-1.5" aria-label="Brand colour preview">
+          {swatchesLoading
+            ? Array.from({ length: 7 }, (_, i) => (
+                <span
+                  key={`sk-${i}`}
+                  className="size-7 shrink-0 animate-pulse rounded-full bg-muted"
+                />
+              ))
+            : swatches.map((c, i) => {
+                const transparent = isTransparent(c);
+                return (
+                  <span
+                    key={i}
+                    className="size-7 shrink-0 rounded-full border border-black/10 shadow-inner"
+                    style={
+                      transparent
+                        ? {
+                            backgroundImage:
+                              'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)',
+                            backgroundSize: '8px 8px',
+                            backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0px',
+                            backgroundColor: '#fff',
+                          }
+                        : { backgroundColor: c }
+                    }
+                    title={transparent ? `${c} transparent` : c}
+                  />
+                );
+              })}
         </div>
         <div className="text-xs text-muted-foreground">
           <span className="font-medium text-foreground/80">Typography</span> {typography}

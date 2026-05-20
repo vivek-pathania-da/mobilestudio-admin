@@ -1,11 +1,28 @@
 "use client"
 
 import { useTheme } from "next-themes"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { useEffect } from "react"
+import { Toaster as Sonner, toast, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme()
+
+  useEffect(() => {
+    /** Dismiss visible toasts when the user taps the toast body (not actions / links). */
+    const onClickCapture = (e: MouseEvent) => {
+      const el = e.target
+      if (!(el instanceof Element)) return
+      const toastRoot = el.closest("li[data-sonner-toast]")
+      if (!toastRoot) return
+      if (el.closest("[data-button]")) return
+      if (el.closest("[data-close-button]")) return
+      if (el.closest("a[href]")) return
+      toast.dismiss()
+    }
+    document.addEventListener("click", onClickCapture, true)
+    return () => document.removeEventListener("click", onClickCapture, true)
+  }, [])
 
   return (
     <Sonner
@@ -38,7 +55,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }
       toastOptions={{
         classNames: {
-          toast: "cn-toast",
+          toast: "cn-toast cursor-pointer",
         },
       }}
       {...props}

@@ -29,7 +29,14 @@ export default function RootLayout({
       <body className={`${inter.className} antialiased`}>
         <Providers>
           {children}
-          <Toaster richColors position="top-right" />
+          <Toaster
+            richColors
+            position="top-center"
+            offset={{ top: '1rem' }}
+            mobileOffset={{ top: '0.75rem' }}
+            duration={2000}
+            closeButton
+          />
         </Providers>
       </body>
     </html>

@@ -87,13 +87,18 @@ export const themesApi = {
     if (!meta) {
       throw new Error('Theme not found');
     }
+    return themesApi.resolveFromListMeta(customerId, meta);
+  },
 
-    if (meta.isActive) {
-      const active = await themesApi.getActive(customerId);
-      if (active.themeId === themeId) {
-        return active;
-      }
-    }
+  /**
+   * Resolved theme for a row from `GET .../all` (avoids redundant list fetches).
+   * Inactive themes load via PUT read when GET-by-id JWT fails on API Gateway.
+   */
+  resolveFromListMeta: async (
+    customerId: string,
+    meta: ThemeListItem
+  ): Promise<ThemeResponse> => {
+    const themeId = meta.themeId;
 
     const useCached = (): ThemeResponse | null => {
       const cached = getCachedThemeResponse(customerId, themeId);
@@ -115,6 +120,13 @@ export const themesApi = {
       const cached = useCached();
       return cached ?? theme;
     };
+
+    if (meta.isActive) {
+      const active = await themesApi.getActive(customerId);
+      if (active.themeId === themeId) {
+        return finishLoad(active);
+      }
+    }
 
     await ensureAccessToken();
 

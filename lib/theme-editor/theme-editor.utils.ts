@@ -1,7 +1,7 @@
 import { DEFAULT_THEME } from './default-theme';
 import { TOKEN_CATEGORIES } from './token-categories';
 
-/** Parse hex components. Editor uses RGBA (#RRGGBBAA); API uses ARGB (#AARRGGBB). */
+/** Parse hex components. Editor uses #RRGGBB / #RRGGBBAA (alpha last — same as API). */
 function parseHexComponents(
   hex: string,
   alphaPosition: 'rgba' | 'argb'
@@ -66,7 +66,7 @@ export function isTransparent(hex: string): boolean {
   return false;
 }
 
-/** API wire format (#RRGGBB or #AARRGGBB) → editor (#RRGGBB / #RRGGBBAA). */
+/** API / OpenAPI → editor (#RRGGBB or #RRGGBBAA, alpha last). */
 export function fromApiHexColor(hex: string): string {
   const trimmed = hex.trim();
   if (trimmed.toLowerCase() === 'transparent') {
@@ -75,19 +75,25 @@ export function fromApiHexColor(hex: string): string {
   const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
   if (!isValidHex(withHash)) return '#000000';
   const raw = withHash.slice(1).toUpperCase();
-  if (raw.length === 6) return `#${raw}`;
-  const { r, g, b, a } = parseHexComponents(withHash, 'argb');
-  return rgbToHex(r, g, b, a);
+  if (raw.length === 8) {
+    const asRgba = parseHexComponents(withHash, 'rgba');
+    const asArgb = parseHexComponents(withHash, 'argb');
+    /** Prefer RGBA (OpenAPI / ThemeTokenMap). Legacy admin builds sent alpha-first ARGB (#AARRGGBB): when the trailing alpha is opaque (FF) but the leading byte carries translucency, decode as ARGB. */
+    if (
+      asRgba.a >= 1 - 1e-6 &&
+      asArgb.a > 0 &&
+      asArgb.a < 1
+    ) {
+      return rgbToHex(asArgb.r, asArgb.g, asArgb.b, asArgb.a);
+    }
+    return rgbToHex(asRgba.r, asRgba.g, asRgba.b, asRgba.a);
+  }
+  return `#${raw}`;
 }
 
-/** Editor format → API (#RRGGBB or #AARRGGBB with alpha first). */
+/** Editor → API (#RRGGBB or #RRGGBBAA per OpenAPI ThemeTokenMap). */
 export function toApiHexColor(hex: string): string {
-  const normalized = normalizeHexColor(hex);
-  const raw = normalized.slice(1).toUpperCase();
-  if (raw.length === 6) return `#${raw}`;
-  const rgb = raw.slice(0, 6);
-  const a = raw.slice(6, 8);
-  return `#${a}${rgb}`;
+  return normalizeHexColor(hex);
 }
 
 /** Hex string for HexAlphaColorPicker (editor RGBA, 8-digit when needed). */
