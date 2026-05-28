@@ -8,6 +8,14 @@ import {
 import { useThemeEditorStore } from '@/stores/theme-editor.store';
 import { cn } from '@/lib/utils';
 
+const FONT_FAMILY_OPTIONS = [
+  'Inter',
+  'Archivo',
+  'Roboto',
+  'BebasNeue',
+  'JetBrainsMono',
+] as const;
+
 function clampSize(n: number): number {
   return Math.max(8, Math.min(96, Math.round(n)));
 }
@@ -40,13 +48,17 @@ export function FontEditor() {
                 <span className="w-28 shrink-0 font-mono text-[13px] text-[#374151]">
                   {key}
                 </span>
-                <input
-                  type="text"
+                <select
                   value={value}
-                  placeholder={DEFAULT_FONT_FAMILIES[key]}
                   onChange={(e) => setFontFamily(key, e.target.value)}
-                  className="min-w-0 flex-1 rounded-md border border-border px-3 py-1.5 font-mono text-[13px] focus:border-[var(--color-border-focus)] focus:outline-none"
-                />
+                  className="min-w-0 flex-1 rounded-md border border-border bg-white px-3 py-1.5 font-mono text-[13px] focus:border-[var(--color-border-focus)] focus:outline-none"
+                >
+                  {FONT_FAMILY_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
                 <span
                   className={cn(
                     'size-2 shrink-0 rounded-full',
