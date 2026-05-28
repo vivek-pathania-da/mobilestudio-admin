@@ -1,6 +1,6 @@
 'use client';
 
-import { PreviewShell, SectionLabel, tk, type SlideProps } from './shared';
+import { PreviewShell, SectionLabel, tk, tr, radiusCss, type SlideProps } from './shared';
 
 function FieldLabel({
   tokens,
@@ -29,6 +29,7 @@ function FieldLabel({
 
 function TextInput({
   tokens,
+  radiusTokens,
   value,
   borderKey = 'inputBorder',
   borderWidth = 1,
@@ -39,11 +40,12 @@ function TextInput({
   borderWidth?: number;
   textKey?: string;
 }) {
+  const r = (key: string, fallback = 8) => tr(radiusTokens ?? {}, key, fallback);
   return (
     <p
       style={{
         height: 32,
-        borderRadius: 8,
+        borderRadius: radiusCss(r('radiusInput'), 8),
         margin: 0,
         background: tk(tokens, 'inputBackground', '#FFFFFF'),
         border: `${borderWidth}px solid ${tk(tokens, borderKey, '#E5E7EB')}`,
@@ -62,9 +64,11 @@ function TextInput({
 
 function CheckboxRow({
   tokens,
+  radiusTokens,
   label,
   checked,
 }: SlideProps & { label: string; checked: boolean }) {
+  const r = (key: string, fallback = 3) => tr(radiusTokens ?? {}, key, fallback);
   return (
     <label
       style={{
@@ -79,7 +83,7 @@ function CheckboxRow({
         style={{
           width: 18,
           height: 18,
-          borderRadius: 4,
+          borderRadius: radiusCss(r('radiusXs', 3), 4),
           flexShrink: 0,
           background: checked
             ? tk(tokens, 'checkboxActive', '#111827')
@@ -149,14 +153,15 @@ function RadioRow({
   );
 }
 
-export function FormSlide({ tokens }: SlideProps) {
+export function FormSlide({ tokens, radiusTokens }: SlideProps) {
+  const r = (key: string, fallback = 8) => tr(radiusTokens ?? {}, key, fallback);
   return (
     <PreviewShell tokens={tokens} title="Form" activeTab={1}>
       <SectionLabel tokens={tokens}>Contact details</SectionLabel>
 
       <section style={{ flexShrink: 0 }}>
         <FieldLabel tokens={tokens}>Full name</FieldLabel>
-        <TextInput tokens={tokens} value="Jane Cooper" textKey="inputText" />
+        <TextInput tokens={tokens} radiusTokens={radiusTokens} value="Jane Cooper" textKey="inputText" />
       </section>
 
       <section style={{ flexShrink: 0 }}>
@@ -165,6 +170,7 @@ export function FormSlide({ tokens }: SlideProps) {
         </FieldLabel>
         <TextInput
           tokens={tokens}
+          radiusTokens={radiusTokens}
           value="jane@example.com"
           borderKey="inputFocusedBorder"
           borderWidth={2}
@@ -178,6 +184,7 @@ export function FormSlide({ tokens }: SlideProps) {
         </FieldLabel>
         <TextInput
           tokens={tokens}
+          radiusTokens={radiusTokens}
           value="Not a valid number"
           borderKey="inputErrorBorder"
           textKey="inputHint"
@@ -200,7 +207,7 @@ export function FormSlide({ tokens }: SlideProps) {
         <p
           style={{
             height: 32,
-            borderRadius: 8,
+            borderRadius: radiusCss(r('radiusInput'), 8),
             margin: 0,
             background: tk(tokens, 'inputDisabledBackground', '#F3F4F6'),
             border: `1px solid ${tk(tokens, 'inputDisabledBorder', '#E5E7EB')}`,
@@ -224,13 +231,13 @@ export function FormSlide({ tokens }: SlideProps) {
           gap: 8,
           flexShrink: 0,
           padding: '8px 10px',
-          borderRadius: 8,
+          borderRadius: radiusCss(r('radiusCard'), 8),
           background: tk(tokens, 'cardBackground', '#FFFFFF'),
           border: `1px solid ${tk(tokens, 'cardBorder', '#E5E7EB')}`,
         }}
       >
-        <CheckboxRow tokens={tokens} label="Email me updates" checked />
-        <CheckboxRow tokens={tokens} label="Share activity summary" checked={false} />
+        <CheckboxRow tokens={tokens} radiusTokens={radiusTokens} label="Email me updates" checked />
+        <CheckboxRow tokens={tokens} radiusTokens={radiusTokens} label="Share activity summary" checked={false} />
       </section>
 
       <section
@@ -240,7 +247,7 @@ export function FormSlide({ tokens }: SlideProps) {
           gap: 8,
           flexShrink: 0,
           padding: '8px 10px',
-          borderRadius: 8,
+          borderRadius: radiusCss(r('radiusCard'), 8),
           background: tk(tokens, 'cardBackground', '#FFFFFF'),
           border: `1px solid ${tk(tokens, 'cardBorder', '#E5E7EB')}`,
         }}
@@ -264,7 +271,7 @@ export function FormSlide({ tokens }: SlideProps) {
           type="button"
           style={{
             height: 34,
-            borderRadius: 8,
+            borderRadius: radiusCss(r('radiusButton'), 8),
             border: `1px solid ${tk(tokens, 'buttonPrimaryBorder', '#111827')}`,
             background: tk(tokens, 'buttonPrimaryBackground', '#111827'),
             color: tk(tokens, 'buttonPrimaryText', '#FFFFFF'),
@@ -279,7 +286,7 @@ export function FormSlide({ tokens }: SlideProps) {
           type="button"
           style={{
             height: 34,
-            borderRadius: 8,
+            borderRadius: radiusCss(r('radiusButton'), 8),
             background: tk(tokens, 'buttonSecondaryBackground', '#FFFFFF'),
             border: `1px solid ${tk(tokens, 'buttonSecondaryBorder', '#E2E8F0')}`,
             color: tk(tokens, 'buttonSecondaryText', '#111827'),

@@ -76,7 +76,14 @@ export function ResultState({ result, onRegenerate, onNewPrompt }: Props) {
         {result.description}
       </p>
       <section style={{ padding: '16px 24px' }}>
-        <AiPreviewSlides tokens={result.tokens} />
+        <AiPreviewSlides
+          tokens={result.tokens}
+          radiusTokens={
+            (result.radius_tokens?.tokens ?? result.radiusTokens) as
+              | Record<string, number>
+              | undefined
+          }
+        />
       </section>
       <section style={{ padding: '0 24px 24px', borderBottom: '1px solid #E2E8F0' }}>
         <PaletteStrip palette={result.palette} />

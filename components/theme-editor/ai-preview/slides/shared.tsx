@@ -2,7 +2,26 @@
 
 import type { ReactNode } from 'react';
 
-export type SlideProps = { tokens: Record<string, string> };
+export type SlideProps = {
+  tokens: Record<string, string>;
+  radiusTokens?: Record<string, number>;
+};
+
+/** Get a radius value from tokens with fallback */
+export function tr(
+  tokens: Record<string, number>,
+  key: string,
+  fallback = 8
+): number {
+  return tokens[key] ?? fallback;
+}
+
+/** CSS border-radius from a radius token value (9999 → pill). */
+export function radiusCss(value: number, cap?: number): string | number {
+  if (value === 9999) return '50%';
+  if (cap != null) return `${Math.min(value, cap)}px`;
+  return `${value}px`;
+}
 
 /** Status-bar inset for flat preview (scaled from iPhone safe area). */
 export const PREVIEW_SAFE_TOP = 14;

@@ -21,6 +21,7 @@ export interface ThemeEditorState {
   colourOverrides: Record<string, string>;
   fontFamilyOverrides: Record<string, string>;
   fontSizeOverrides: Record<string, number>;
+  radiusOverrides: Record<string, number>;
   selectedCategoryId: string;
   selectedTab: 'core' | 'extended';
   selectedTokenKey: string | null;

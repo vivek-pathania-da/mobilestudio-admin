@@ -143,6 +143,41 @@ export interface ThemeFontTokens {
   sizes: ThemeFontSizeMap;
 }
 
+export interface RadiusPalette {
+  radiusButton: number;
+  radiusInput: number;
+  radiusCard: number;
+  radiusModal: number;
+  radiusChip: number;
+  radiusBottomSheet: number;
+}
+
+export interface RadiusTokens {
+  radiusNone: number;
+  radiusXs: number;
+  radiusSm: number;
+  radiusMd: number;
+  radiusLg: number;
+  radiusXl: number;
+  radiusFull: number;
+  radiusButton: number;
+  radiusInput: number;
+  radiusCard: number;
+  radiusModal: number;
+  radiusChip: number;
+  radiusIconButton: number;
+  radiusBadge: number;
+  radiusAvatar: number;
+  radiusBottomSheet: number;
+  radiusToast: number;
+  radiusIcon: number;
+}
+
+export interface RadiusTokensResponse {
+  palette: RadiusPalette;
+  tokens: RadiusTokens;
+}
+
 export interface ThemeResponse {
   customerId: string;
   themeId: string;
@@ -154,6 +189,7 @@ export interface ThemeResponse {
   updatedAt: string;
   tokens: ThemeTokenMap;
   font_tokens: ThemeFontTokens;
+  radius_tokens?: RadiusTokensResponse;
 }
 
 export interface ThemeListItem {
@@ -171,6 +207,7 @@ export interface CreateThemeRequest {
   tokens?: ThemeTokenMap;
   fontFamilies?: ThemeFontFamilyMap;
   fontSizes?: ThemeFontSizeMap;
+  radiusPalette?: Partial<RadiusPalette>;
 }
 
 export interface UpdateThemeRequest {
@@ -178,6 +215,7 @@ export interface UpdateThemeRequest {
   tokens?: ThemeTokenMap;
   fontFamilies?: ThemeFontFamilyMap;
   fontSizes?: ThemeFontSizeMap;
+  radiusPalette?: Partial<RadiusPalette>;
 }
 
 export interface AiGenerateRequest {
@@ -205,6 +243,11 @@ export interface AiGenerateResponse {
   tokens: Record<string, string>;
   fontFamilies: Record<string, string>;
   fontSizes: Record<string, number>;
+  /** Normalized from API `radius_tokens` or `radiusPalette` + `radiusTokens`. */
+  radius_tokens?: RadiusTokensResponse;
+  /** Raw AI generate fields (camelCase). */
+  radiusPalette?: RadiusPalette;
+  radiusTokens?: RadiusTokens;
   description: string;
   promptUsed: string;
 }

@@ -1,4 +1,5 @@
-import { DEFAULT_THEME } from './default-theme';
+import { DEFAULT_THEME, DEFAULT_RADIUS_TOKENS, SEMANTIC_RADIUS_PALETTE_KEYS, COMPONENT_RADIUS_KEYS } from './default-theme';
+import type { RadiusPalette } from '@/types/api';
 import { TOKEN_CATEGORIES } from './token-categories';
 
 /** Parse hex components. Editor uses #RRGGBB / #RRGGBBAA (alpha last — same as API). */
@@ -204,9 +205,43 @@ export function findTokenCategory(tokenKey: string): {
   return null;
 }
 
+export function buildRadiusOverridesFromResolved(
+  tokens: Record<string, number> | undefined
+): Record<string, number> {
+  const overrides: Record<string, number> = {};
+  if (!tokens) return overrides;
+  for (const [key, value] of Object.entries(tokens)) {
+    if (
+      DEFAULT_RADIUS_TOKENS[key] !== undefined &&
+      value !== DEFAULT_RADIUS_TOKENS[key]
+    ) {
+      overrides[key] = value;
+    }
+  }
+  return overrides;
+}
+
+/** PUT body: only semantic palette keys that differ from defaults. */
+export function buildRadiusPalettePayload(
+  overrides: Record<string, number>
+): Partial<RadiusPalette> {
+  const out: Partial<RadiusPalette> = {};
+  for (const key of SEMANTIC_RADIUS_PALETTE_KEYS) {
+    const value = overrides[key] ?? DEFAULT_RADIUS_TOKENS[key];
+    const def = DEFAULT_RADIUS_TOKENS[key];
+    if (def !== undefined && value !== def) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 export function getCategoryTokenCount(categoryId: string): number {
   if (categoryId === 'typography') {
     return 18;
+  }
+  if (categoryId === 'shape') {
+    return COMPONENT_RADIUS_KEYS.length;
   }
   const cat = TOKEN_CATEGORIES.find((c) => c.id === categoryId);
   if (!cat) return 0;
@@ -219,6 +254,7 @@ export function getCategoryTokenCount(categoryId: string): number {
 /** First colour token in a category (for default editor selection). */
 export function getFirstTokenKeyForCategory(categoryId: string): string | null {
   if (categoryId === 'typography') return null;
+  if (categoryId === 'shape') return 'radiusButton';
   const cat = TOKEN_CATEGORIES.find((c) => c.id === categoryId);
   if (!cat) return null;
   return cat.subcategories[0]?.tokens[0] ?? null;

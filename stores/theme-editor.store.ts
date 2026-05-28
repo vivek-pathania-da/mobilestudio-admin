@@ -9,10 +9,13 @@ import {
   DEFAULT_THEME,
   DEFAULT_FONT_FAMILIES,
   DEFAULT_FONT_SIZES,
+  DEFAULT_RADIUS_TOKENS,
 } from '@/lib/theme-editor/default-theme';
 import {
   buildClearColourOverridesPayload,
   buildOverridesPayload,
+  buildRadiusOverridesFromResolved,
+  buildRadiusPalettePayload,
 } from '@/lib/theme-editor/theme-editor.utils';
 import type { ThemeEditorState } from '@/lib/theme-editor/theme-editor.types';
 import type { AiGenerateResponse, ThemeResponse, UpdateThemeRequest } from '@/types/api';
@@ -27,6 +30,7 @@ type Snapshot = {
   colourOverrides: Record<string, string>;
   fontFamilyOverrides: Record<string, string>;
   fontSizeOverrides: Record<string, number>;
+  radiusOverrides: Record<string, number>;
 };
 
 function cloneSnapshot(s: Snapshot): Snapshot {
@@ -35,6 +39,7 @@ function cloneSnapshot(s: Snapshot): Snapshot {
     colourOverrides: { ...s.colourOverrides },
     fontFamilyOverrides: { ...s.fontFamilyOverrides },
     fontSizeOverrides: { ...s.fontSizeOverrides },
+    radiusOverrides: { ...s.radiusOverrides },
   };
 }
 
@@ -94,6 +99,9 @@ function snapshotFromThemeResponse(updated: ThemeResponse): Snapshot {
     colourOverrides: {},
     fontFamilyOverrides: {},
     fontSizeOverrides: {},
+    radiusOverrides: buildRadiusOverridesFromResolved(
+      updated.radius_tokens?.tokens as Record<string, number> | undefined
+    ),
   };
   for (const [key, value] of Object.entries(updated.tokens)) {
     const editorHex = fromApiHexColor(value);
@@ -131,7 +139,8 @@ interface ThemeEditorStore extends ThemeEditorState {
     version: number,
     tokens: Record<string, string>,
     fontFamilies: Record<string, string>,
-    fontSizes: Record<string, number>
+    fontSizes: Record<string, number>,
+    radiusTokens?: Record<string, number>
   ) => void;
 
   setThemeName: (name: string) => void;
@@ -143,6 +152,11 @@ interface ThemeEditorStore extends ThemeEditorState {
 
   setFontFamily: (key: string, value: string) => void;
   setFontSize: (key: string, value: number) => void;
+
+  setRadiusToken: (key: string, value: number) => void;
+  resetRadiusToken: (key: string) => void;
+  resetAllRadiusTokens: () => void;
+  getRadiusValue: (key: string) => number;
 
   selectCategory: (categoryId: string) => void;
   selectTab: (tab: 'core' | 'extended') => void;
@@ -163,6 +177,7 @@ interface ThemeEditorStore extends ThemeEditorState {
   preAiColourOverrides: Record<string, string> | null;
   preAiFontFamilyOverrides: Record<string, string> | null;
   preAiFontSizeOverrides: Record<string, number> | null;
+  preAiRadiusOverrides: Record<string, number> | null;
   canUndoAi: boolean;
 
   previewModalOpen: boolean;
@@ -188,6 +203,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
   colourOverrides: {},
   fontFamilyOverrides: {},
   fontSizeOverrides: {},
+  radiusOverrides: {},
   selectedCategoryId: INITIAL_CATEGORY,
   selectedTab: 'core',
   selectedTokenKey: getFirstTokenKeyForCategory(INITIAL_CATEGORY),
@@ -202,6 +218,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
   preAiColourOverrides: null,
   preAiFontFamilyOverrides: null,
   preAiFontSizeOverrides: null,
+  preAiRadiusOverrides: null,
   canUndoAi: false,
   previewModalOpen: false,
 
@@ -213,7 +230,8 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
     version,
     tokens,
     fontFamilies,
-    fontSizes
+    fontSizes,
+    radiusTokens
   ) => {
     const colourOverrides: Record<string, string> = {};
     for (const [key, value] of Object.entries(tokens)) {
@@ -243,11 +261,14 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       }
     }
 
+    const radiusOverrides = buildRadiusOverridesFromResolved(radiusTokens);
+
     const snap: Snapshot = {
       themeName,
       colourOverrides: { ...colourOverrides },
       fontFamilyOverrides: { ...fontFamilyOverrides },
       fontSizeOverrides: { ...fontSizeOverrides },
+      radiusOverrides: { ...radiusOverrides },
     };
 
     set({
@@ -259,6 +280,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       colourOverrides,
       fontFamilyOverrides,
       fontSizeOverrides,
+      radiusOverrides,
       selectedCategoryId: INITIAL_CATEGORY,
       selectedTab: 'core',
       selectedTokenKey: getFirstTokenKeyForCategory(INITIAL_CATEGORY),
@@ -305,6 +327,14 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       });
       return;
     }
+    if (categoryId === 'shape') {
+      set({
+        radiusOverrides: {},
+        isDirty: true,
+        clearAllOverrides: false,
+      });
+      return;
+    }
     const category = TOKEN_CATEGORIES.find((c) => c.id === categoryId);
     if (!category) return;
     const categoryTokens = category.subcategories.flatMap((s) => s.tokens);
@@ -326,6 +356,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       colourOverrides: {},
       fontFamilyOverrides: {},
       fontSizeOverrides: {},
+      radiusOverrides: {},
       isDirty: true,
       clearAllOverrides: true,
     });
@@ -355,6 +386,35 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
     });
   },
 
+  setRadiusToken: (key, value) => {
+    set((state) => {
+      const next = { ...state.radiusOverrides };
+      if (value === DEFAULT_RADIUS_TOKENS[key]) {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+      return { radiusOverrides: next, isDirty: true, clearAllOverrides: false };
+    });
+  },
+
+  resetRadiusToken: (key) => {
+    set((state) => {
+      const next = { ...state.radiusOverrides };
+      delete next[key];
+      return { radiusOverrides: next, isDirty: true, clearAllOverrides: false };
+    });
+  },
+
+  resetAllRadiusTokens: () => {
+    set({ radiusOverrides: {}, isDirty: true, clearAllOverrides: false });
+  },
+
+  getRadiusValue: (key) => {
+    const { radiusOverrides } = get();
+    return radiusOverrides[key] ?? DEFAULT_RADIUS_TOKENS[key] ?? 0;
+  },
+
   selectCategory: (categoryId) =>
     set({
       selectedCategoryId: categoryId,
@@ -381,6 +441,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       colourOverrides,
       fontFamilyOverrides,
       fontSizeOverrides,
+      radiusOverrides,
       clearAllOverrides,
       savedSnapshot,
     } = get();
@@ -389,6 +450,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       const tokens = buildOverridesPayload(colourOverrides);
       const fontFamilies = buildFontFamilyPayload(fontFamilyOverrides);
       const fontSizes = buildFontSizePayload(fontSizeOverrides);
+      const radiusPalette = buildRadiusPalettePayload(radiusOverrides);
       const body: UpdateThemeRequest = { themeName };
       if (clearAllOverrides) {
         const prev = savedSnapshot;
@@ -408,9 +470,42 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
         body.fontSizes =
           Object.keys(clearedSizes).length > 0 ? clearedSizes : {};
       } else {
+        // If a previously-saved override was removed locally (set back to default),
+        // we must explicitly send the default value to clear it server-side.
+        const prev = savedSnapshot;
+        const removedFamilyKeys: Record<string, string> = {};
+        const removedSizeKeys: Record<string, number> = {};
+        if (prev) {
+          for (const key of Object.keys(prev.fontFamilyOverrides)) {
+            if (!(key in fontFamilyOverrides)) {
+              removedFamilyKeys[key] = prev.fontFamilyOverrides[key];
+            }
+          }
+          for (const key of Object.keys(prev.fontSizeOverrides)) {
+            if (!(key in fontSizeOverrides)) {
+              removedSizeKeys[key] = prev.fontSizeOverrides[key];
+            }
+          }
+        }
+        const clearedFamilies =
+          Object.keys(removedFamilyKeys).length > 0
+            ? buildClearFontFamilyPayload(removedFamilyKeys)
+            : {};
+        const clearedSizes =
+          Object.keys(removedSizeKeys).length > 0
+            ? buildClearFontSizePayload(removedSizeKeys)
+            : {};
+
         if (Object.keys(tokens).length > 0) body.tokens = tokens;
-        if (Object.keys(fontFamilies).length > 0) body.fontFamilies = fontFamilies;
-        if (Object.keys(fontSizes).length > 0) body.fontSizes = fontSizes;
+        if (Object.keys(fontFamilies).length > 0 || Object.keys(clearedFamilies).length > 0) {
+          body.fontFamilies = { ...clearedFamilies, ...fontFamilies };
+        }
+        if (Object.keys(fontSizes).length > 0 || Object.keys(clearedSizes).length > 0) {
+          body.fontSizes = { ...clearedSizes, ...fontSizes };
+        }
+        if (Object.keys(radiusPalette).length > 0) {
+          body.radiusPalette = radiusPalette;
+        }
       }
       const updated = await themesApi.update(customerId, themeId, body);
       const snap = snapshotFromThemeResponse(updated);
@@ -425,6 +520,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
         colourOverrides: { ...snap.colourOverrides },
         fontFamilyOverrides: { ...snap.fontFamilyOverrides },
         fontSizeOverrides: { ...snap.fontSizeOverrides },
+        radiusOverrides: { ...snap.radiusOverrides },
         isDirty: false,
         isSaving: false,
         clearAllOverrides: false,
@@ -467,6 +563,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       colourOverrides,
       fontFamilyOverrides,
       fontSizeOverrides,
+      radiusOverrides,
     } = get();
     if (!aiResult) return;
 
@@ -474,6 +571,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       preAiColourOverrides: { ...colourOverrides },
       preAiFontFamilyOverrides: { ...fontFamilyOverrides },
       preAiFontSizeOverrides: { ...fontSizeOverrides },
+      preAiRadiusOverrides: { ...radiusOverrides },
     });
 
     const newColourOverrides: Record<string, string> = {};
@@ -504,10 +602,26 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       }
     }
 
+    const newRadiusOverrides: Record<string, number> = {};
+    const resolvedRadius =
+      aiResult.radius_tokens?.tokens ??
+      aiResult.radiusTokens;
+    if (resolvedRadius) {
+      for (const [key, value] of Object.entries(resolvedRadius)) {
+        if (
+          DEFAULT_RADIUS_TOKENS[key] !== undefined &&
+          value !== DEFAULT_RADIUS_TOKENS[key]
+        ) {
+          newRadiusOverrides[key] = value;
+        }
+      }
+    }
+
     set({
       colourOverrides: newColourOverrides,
       fontFamilyOverrides: newFontFamilyOverrides,
       fontSizeOverrides: newFontSizeOverrides,
+      radiusOverrides: newRadiusOverrides,
       isDirty: true,
       canUndoAi: true,
       aiModalOpen: false,
@@ -520,6 +634,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       preAiColourOverrides,
       preAiFontFamilyOverrides,
       preAiFontSizeOverrides,
+      preAiRadiusOverrides,
     } = get();
     if (!preAiColourOverrides) return;
 
@@ -527,11 +642,13 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       colourOverrides: preAiColourOverrides,
       fontFamilyOverrides: preAiFontFamilyOverrides ?? {},
       fontSizeOverrides: preAiFontSizeOverrides ?? {},
+      radiusOverrides: preAiRadiusOverrides ?? {},
       isDirty: true,
       canUndoAi: false,
       preAiColourOverrides: null,
       preAiFontFamilyOverrides: null,
       preAiFontSizeOverrides: null,
+      preAiRadiusOverrides: null,
     });
   },
 
@@ -551,6 +668,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
       colourOverrides: { ...snap.colourOverrides },
       fontFamilyOverrides: { ...snap.fontFamilyOverrides },
       fontSizeOverrides: { ...snap.fontSizeOverrides },
+      radiusOverrides: { ...snap.radiusOverrides },
       isDirty: false,
       clearAllOverrides: false,
       selectedTokenKey: getFirstTokenKeyForCategory(state.selectedCategoryId),
@@ -563,11 +681,17 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
   },
 
   getOverrideCount: () => {
-    const { colourOverrides, fontFamilyOverrides, fontSizeOverrides } = get();
+    const {
+      colourOverrides,
+      fontFamilyOverrides,
+      fontSizeOverrides,
+      radiusOverrides,
+    } = get();
     return (
       Object.keys(colourOverrides).length +
       Object.keys(fontFamilyOverrides).length +
-      Object.keys(fontSizeOverrides).length
+      Object.keys(fontSizeOverrides).length +
+      Object.keys(radiusOverrides).length
     );
   },
 

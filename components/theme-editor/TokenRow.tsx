@@ -121,3 +121,126 @@ export function TokenRow({
     </div>
   );
 }
+
+export interface RadiusTokenRowProps {
+  tokenKey: string;
+  label: string;
+  value: number;
+  defaultValue: number;
+  isFixed: boolean;
+  isPillable: boolean;
+  maxValue: number;
+  isSelected: boolean;
+  isModified: boolean;
+  onClick: () => void;
+  onReset: () => void;
+}
+
+export function RadiusTokenRow({
+  label,
+  value,
+  isFixed,
+  isSelected,
+  isModified,
+  onClick,
+  onReset,
+}: RadiusTokenRowProps) {
+  const displayValue = value === 9999 ? 'Pill' : `${value}dp`;
+
+  return (
+    <div
+      role="button"
+      tabIndex={isFixed ? -1 : 0}
+      onClick={isFixed ? undefined : onClick}
+      onKeyDown={(e) => {
+        if (isFixed) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        padding: '10px 16px',
+        cursor: isFixed ? 'default' : 'pointer',
+        background: isSelected ? '#F0FDF4' : 'transparent',
+        borderLeft: isModified ? '3px solid #2563EB' : '3px solid transparent',
+        borderBottom: '1px solid #F1F5F9',
+        gap: 12,
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: value === 9999 ? '50%' : `${Math.min(value, 16)}px`,
+          border: '2px solid #E2E8F0',
+          background: isFixed ? '#F1F5F9' : '#FFFFFF',
+          flexShrink: 0,
+        }}
+      />
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p
+          style={{
+            fontSize: 13,
+            fontWeight: 500,
+            color: '#0F172A',
+            margin: 0,
+          }}
+        >
+          {label}
+        </p>
+        <p
+          style={{
+            fontSize: 11,
+            color: isModified ? '#2563EB' : '#94A3B8',
+            margin: 0,
+          }}
+        >
+          {isModified ? 'MODIFIED' : 'DEFAULT'}
+        </p>
+      </div>
+
+      <span
+        style={{
+          fontSize: 12,
+          fontWeight: 500,
+          color: isFixed ? '#94A3B8' : '#374151',
+          backgroundColor: '#F8FAFC',
+          border: '1px solid #E2E8F0',
+          borderRadius: 6,
+          padding: '2px 8px',
+          minWidth: 52,
+          textAlign: 'center',
+        }}
+      >
+        {displayValue}
+      </span>
+
+      {isModified && !isFixed ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onReset();
+          }}
+          style={{
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            color: '#94A3B8',
+            padding: 4,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          aria-label="Reset radius token"
+        >
+          ↺
+        </button>
+      ) : null}
+    </div>
+  );
+}

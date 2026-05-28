@@ -41,6 +41,7 @@ import {
   TextCursorInput,
   Trophy,
   Type,
+  Hexagon,
   UserCircle,
   Users,
   Video,
@@ -53,12 +54,15 @@ import {
   DEFAULT_FONT_FAMILIES,
   DEFAULT_FONT_SIZES,
   DEFAULT_THEME,
+  DEFAULT_RADIUS_TOKENS,
+  COMPONENT_RADIUS_KEYS,
 } from '@/lib/theme-editor/default-theme';
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Palette,
   Square,
   Type,
+  Hexagon,
   Star,
   Frame,
   CheckCircle,
@@ -109,8 +113,50 @@ export function CategoryNav() {
   const selectedCategoryId = useThemeEditorStore((s) => s.selectedCategoryId);
   const selectTab = useThemeEditorStore((s) => s.selectTab);
   const selectCategory = useThemeEditorStore((s) => s.selectCategory);
+  const radiusOverrides = useThemeEditorStore((s) => s.radiusOverrides);
 
   const filtered = TOKEN_CATEGORIES.filter((c) => c.tab === selectedTab);
+  const shapeModifiedCount = COMPONENT_RADIUS_KEYS.filter(
+    (k) =>
+      k in radiusOverrides &&
+      radiusOverrides[k] !== DEFAULT_RADIUS_TOKENS[k]
+  ).length;
+
+  function renderCategoryButton(
+    id: string,
+    label: string,
+    Icon: LucideIcon,
+    count: number
+  ) {
+    const selected = selectedCategoryId === id;
+    return (
+      <button
+        key={id}
+        type="button"
+        onClick={() => selectCategory(id)}
+        className={cn(
+          'flex w-full cursor-pointer items-center gap-2.5 rounded-none border-l-2 border-transparent px-3 py-2 text-left transition-colors',
+          selected
+            ? 'border-l-[var(--color-sidebar-accent)] bg-[var(--color-sidebar-hover)] pl-[10px] text-[var(--color-sidebar-foreground)]'
+            : 'text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-hover)] hover:text-[var(--color-sidebar-foreground)]'
+        )}
+      >
+        <Icon
+          className={cn(
+            'size-4 shrink-0',
+            selected
+              ? 'text-[var(--color-sidebar-accent)]'
+              : 'text-[var(--color-sidebar-muted)]'
+          )}
+          strokeWidth={1.75}
+        />
+        <span className="min-w-0 flex-1 truncate text-[13px]">{label}</span>
+        <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)] px-1 font-mono text-[10px] font-semibold text-[var(--color-primary-foreground)]">
+          {count}
+        </span>
+      </button>
+    );
+  }
 
   return (
     <aside
@@ -145,37 +191,21 @@ export function CategoryNav() {
       </div>
 
       <nav className="flex-1 overflow-y-auto py-1">
-        {filtered.map((cat) => {
+        {filtered.flatMap((cat) => {
           const Icon = ICON_MAP[cat.icon] ?? Circle;
-          const selected = selectedCategoryId === cat.id;
           const count = getCategoryTokenCount(cat.id);
-          return (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => selectCategory(cat.id)}
-              className={cn(
-                'flex w-full cursor-pointer items-center gap-2.5 rounded-none border-l-2 border-transparent px-3 py-2 text-left transition-colors',
-                selected
-                  ? 'border-l-[var(--color-sidebar-accent)] bg-[var(--color-sidebar-hover)] pl-[10px] text-[var(--color-sidebar-foreground)]'
-                  : 'text-[var(--color-sidebar-muted)] hover:bg-[var(--color-sidebar-hover)] hover:text-[var(--color-sidebar-foreground)]'
-              )}
-            >
-              <Icon
-                className={cn(
-                  'size-4 shrink-0',
-                  selected
-                    ? 'text-[var(--color-sidebar-accent)]'
-                    : 'text-[var(--color-sidebar-muted)]'
-                )}
-                strokeWidth={1.75}
-              />
-              <span className="min-w-0 flex-1 truncate text-[13px]">{cat.label}</span>
-              <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)] px-1 font-mono text-[10px] font-semibold text-[var(--color-primary-foreground)]">
-                {count}
-              </span>
-            </button>
-          );
+          const items = [renderCategoryButton(cat.id, cat.label, Icon, count)];
+          if (selectedTab === 'core' && cat.id === 'typography') {
+            items.push(
+              renderCategoryButton(
+                'shape',
+                'Shape',
+                Hexagon,
+                shapeModifiedCount
+              )
+            );
+          }
+          return items;
         })}
       </nav>
 

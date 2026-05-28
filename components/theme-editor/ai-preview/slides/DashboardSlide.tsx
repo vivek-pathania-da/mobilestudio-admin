@@ -1,6 +1,6 @@
 'use client';
 
-import { PreviewShell, SectionLabel, tk, type SlideProps } from './shared';
+import { PreviewShell, SectionLabel, tk, tr, radiusCss, type SlideProps } from './shared';
 
 const METRICS = [
   {
@@ -36,13 +36,14 @@ const ACTIVITY = [
   },
 ] as const;
 
-function HeroBanner({ tokens }: SlideProps) {
+function HeroBanner({ tokens, radiusTokens }: SlideProps) {
   const start = tk(tokens, 'primaryGradientStart', '#111827');
   const end = tk(tokens, 'primaryGradientEnd', '#4B5563');
+  const r = (key: string, fallback = 8) => tr(radiusTokens ?? {}, key, fallback);
   return (
     <article
       style={{
-        borderRadius: 10,
+        borderRadius: radiusCss(r('radiusCard', 8), 10),
         padding: '12px 14px',
         flexShrink: 0,
         background: `linear-gradient(135deg, ${start} 0%, ${end} 100%)`,
@@ -84,17 +85,19 @@ function HeroBanner({ tokens }: SlideProps) {
 
 function MetricCard({
   tokens,
+  radiusTokens,
   label,
   value,
   delta,
   deltaKey,
   accent,
 }: SlideProps & (typeof METRICS)[number]) {
+  const r = (key: string, fallback = 8) => tr(radiusTokens ?? {}, key, fallback);
   return (
     <article
       style={{
         flex: 1,
-        borderRadius: 8,
+        borderRadius: radiusCss(r('radiusCard', 6), 8),
         padding: '10px 12px',
         flexShrink: 0,
         background: tk(tokens, 'cardBackground', '#FFFFFF'),
@@ -135,7 +138,8 @@ function MetricCard({
   );
 }
 
-export function DashboardSlide({ tokens }: SlideProps) {
+export function DashboardSlide({ tokens, radiusTokens }: SlideProps) {
+  const r = (key: string, fallback = 8) => tr(radiusTokens ?? {}, key, fallback);
   return (
     <PreviewShell tokens={tokens} title="Dashboard" activeTab={0} mailBadge={3}>
       <section style={{ flexShrink: 0 }}>
@@ -160,11 +164,11 @@ export function DashboardSlide({ tokens }: SlideProps) {
         </p>
       </section>
 
-      <HeroBanner tokens={tokens} />
+      <HeroBanner tokens={tokens} radiusTokens={radiusTokens} />
 
       <section style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
         {METRICS.map((m) => (
-          <MetricCard key={m.label} tokens={tokens} {...m} />
+          <MetricCard key={m.label} tokens={tokens} radiusTokens={radiusTokens} {...m} />
         ))}
       </section>
 
@@ -218,7 +222,7 @@ export function DashboardSlide({ tokens }: SlideProps) {
           gap: 8,
           background: tk(tokens, 'cardBackground', '#FFFFFF'),
           border: `1px solid ${tk(tokens, 'cardBorder', '#E5E7EB')}`,
-          borderRadius: 10,
+          borderRadius: radiusCss(r('radiusCard', 8), 10),
           padding: '10px 12px',
           overflow: 'hidden',
         }}

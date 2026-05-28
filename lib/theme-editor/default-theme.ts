@@ -413,20 +413,126 @@ export const DEFAULT_FONT_FAMILIES: Record<string, string> = {
 export const DEFAULT_FONT_SIZES: Record<string, number> = {
   displayLarge: 48,
   displayMedium: 40,
+  displaySmall: 32,
   headlineLarge: 24,
   headlineMedium: 22,
+  headlineSmall: 20,
   titleLarge: 16,
+  titleMedium: 14,
+  titleSmall: 12,
   bodyLarge: 16,
   bodyMedium: 14,
   bodySmall: 12,
   labelLarge: 14,
   labelMedium: 12,
+  labelSmall: 10,
   buttonLarge: 16,
   buttonMedium: 14,
+  buttonSmall: 12,
   inputText: 16,
   inputLabel: 14,
   appBarTitle: 18,
 };
+
+// ─────────────────────────────────────────────────────────────
+// DEFAULT RADIUS TOKENS
+// ─────────────────────────────────────────────────────────────
+
+export const DEFAULT_RADIUS_TOKENS: Record<string, number> = {
+  radiusNone: 0,
+  radiusXs: 3,
+  radiusSm: 6,
+  radiusMd: 12,
+  radiusLg: 16,
+  radiusXl: 24,
+  radiusFull: 9999,
+  radiusButton: 8,
+  radiusInput: 8,
+  radiusCard: 12,
+  radiusModal: 16,
+  radiusChip: 8,
+  radiusBadge: 9999,
+  radiusAvatar: 9999,
+  radiusBottomSheet: 24,
+  radiusIconButton: 8,
+  radiusToast: 8,
+  radiusIcon: 8,
+};
+
+export const RADIUS_TOKEN_LABELS: Record<string, string> = {
+  radiusNone: 'None',
+  radiusXs: 'Extra Small',
+  radiusSm: 'Small',
+  radiusMd: 'Medium',
+  radiusLg: 'Large',
+  radiusXl: 'Extra Large',
+  radiusFull: 'Full / Pill',
+  radiusButton: 'Button',
+  radiusInput: 'Input Field',
+  radiusCard: 'Card',
+  radiusModal: 'Modal / Dialog',
+  radiusChip: 'Chip',
+  radiusBadge: 'Badge',
+  radiusAvatar: 'Avatar',
+  radiusBottomSheet: 'Bottom Sheet',
+  radiusIconButton: 'Icon Button',
+  radiusToast: 'Toast / Snackbar',
+  radiusIcon: 'Icon Container',
+};
+
+export const FIXED_RADIUS_TOKENS = new Set([
+  'radiusNone',
+  'radiusFull',
+  'radiusBadge',
+  'radiusAvatar',
+]);
+
+export const PILL_RADIUS_TOKENS = new Set([
+  'radiusButton',
+  'radiusChip',
+  'radiusInput',
+  'radiusIconButton',
+  'radiusToast',
+  'radiusIcon',
+]);
+
+export const RADIUS_TOKEN_MAX: Record<string, number> = {
+  radiusButton: 9999,
+  radiusInput: 9999,
+  radiusCard: 24,
+  radiusModal: 28,
+  radiusChip: 9999,
+  radiusBottomSheet: 32,
+  radiusIconButton: 9999,
+  radiusToast: 9999,
+  radiusIcon: 9999,
+  radiusXs: 8,
+  radiusSm: 12,
+  radiusMd: 20,
+  radiusLg: 28,
+  radiusXl: 40,
+};
+
+/** User-editable component radius keys (Shape category). */
+export const COMPONENT_RADIUS_KEYS = [
+  'radiusButton',
+  'radiusInput',
+  'radiusCard',
+  'radiusModal',
+  'radiusChip',
+  'radiusBottomSheet',
+  'radiusIconButton',
+] as const;
+
+/** Semantic palette keys persisted via PUT `radiusPalette`. */
+export const SEMANTIC_RADIUS_PALETTE_KEYS = [
+  'radiusButton',
+  'radiusInput',
+  'radiusCard',
+  'radiusModal',
+  'radiusChip',
+  'radiusBottomSheet',
+] as const;
 
 export const VALID_FONT_FAMILY_KEYS = new Set(Object.keys(DEFAULT_FONT_FAMILIES));
 export const VALID_FONT_SIZE_KEYS = new Set(Object.keys(DEFAULT_FONT_SIZES));

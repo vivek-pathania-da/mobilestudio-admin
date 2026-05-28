@@ -3,18 +3,23 @@
 import { useMemo } from 'react';
 import { Eye, X } from 'lucide-react';
 import { useThemeEditorStore } from '@/stores/theme-editor.store';
-import { resolvePreviewTokens } from '@/components/theme-editor/ai-preview/utils';
+import { resolvePreviewTokens, resolvePreviewRadius } from '@/components/theme-editor/ai-preview/utils';
 import { AiPreviewSlides } from '@/components/theme-editor/ai-preview/AiPreviewSlides';
 
 export function ThemePreviewModal() {
   const previewModalOpen = useThemeEditorStore((s) => s.previewModalOpen);
   const closePreviewModal = useThemeEditorStore((s) => s.closePreviewModal);
   const colourOverrides = useThemeEditorStore((s) => s.colourOverrides);
+  const radiusOverrides = useThemeEditorStore((s) => s.radiusOverrides);
   const themeName = useThemeEditorStore((s) => s.themeName);
 
   const tokens = useMemo(
     () => resolvePreviewTokens(colourOverrides),
     [colourOverrides]
+  );
+  const radiusTokens = useMemo(
+    () => resolvePreviewRadius(radiusOverrides),
+    [radiusOverrides]
   );
 
   if (!previewModalOpen) return null;
@@ -98,7 +103,7 @@ export function ThemePreviewModal() {
             justifyContent: 'center',
           }}
         >
-          <AiPreviewSlides tokens={tokens} />
+          <AiPreviewSlides tokens={tokens} radiusTokens={radiusTokens} />
         </section>
 
         <footer

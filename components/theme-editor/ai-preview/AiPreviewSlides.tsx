@@ -12,9 +12,12 @@ const SLIDES: { id: AiPreviewSlide; label: string }[] = [
   { id: 'typography', label: 'Type' },
 ];
 
-type Props = { tokens: Record<string, string> };
+type Props = {
+  tokens: Record<string, string>;
+  radiusTokens?: Record<string, number>;
+};
 
-export function AiPreviewSlides({ tokens }: Props) {
+export function AiPreviewSlides({ tokens, radiusTokens }: Props) {
   const [current, setCurrent] = useState(0);
   const prev = () => setCurrent((i) => (i - 1 + SLIDES.length) % SLIDES.length);
   const next = () => setCurrent((i) => (i + 1) % SLIDES.length);
@@ -42,7 +45,7 @@ export function AiPreviewSlides({ tokens }: Props) {
           <ChevronLeft size={16} color="#6B7280" />
         </button>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-          <AiPreviewPhone tokens={tokens} slide={SLIDES[current].id} />
+          <AiPreviewPhone tokens={tokens} radiusTokens={radiusTokens} slide={SLIDES[current].id} />
         </div>
         <button
           type="button"

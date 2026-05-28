@@ -9,6 +9,7 @@ import type { AiPreviewSlide } from './types';
 
 type Props = {
   tokens: Record<string, string>;
+  radiusTokens?: Record<string, number>;
   slide: AiPreviewSlide;
 };
 
@@ -19,11 +20,11 @@ const SLIDE_MAP = {
   typography: TypographySlide,
 };
 
-export function AiPreviewPhone({ tokens, slide }: Props) {
+export function AiPreviewPhone({ tokens, radiusTokens, slide }: Props) {
   const SlideComponent = SLIDE_MAP[slide];
   return (
     <PhoneFrame>
-      <SlideComponent tokens={tokens} />
+      <SlideComponent tokens={tokens} radiusTokens={radiusTokens} />
     </PhoneFrame>
   );
 }

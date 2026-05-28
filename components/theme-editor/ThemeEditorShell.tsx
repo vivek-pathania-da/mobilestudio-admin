@@ -82,6 +82,7 @@ export function ThemeEditorShell({
   const colourOverrides = useThemeEditorStore((s) => s.colourOverrides);
   const fontFamilyOverrides = useThemeEditorStore((s) => s.fontFamilyOverrides);
   const fontSizeOverrides = useThemeEditorStore((s) => s.fontSizeOverrides);
+  const radiusOverrides = useThemeEditorStore((s) => s.radiusOverrides);
 
   const [editingName, setEditingName] = useState(false);
   const { confirm, dialogProps } = useConfirmDialog();
@@ -102,7 +103,8 @@ export function ThemeEditorShell({
       data.version,
       data.tokens,
       data.font_tokens.families,
-      data.font_tokens.sizes
+      data.font_tokens.sizes,
+      data.radius_tokens?.tokens as Record<string, number> | undefined
     );
   }, [themeQuery.data, customerId, initialise]);
 
@@ -194,7 +196,8 @@ export function ThemeEditorShell({
   const count =
     Object.keys(colourOverrides).length +
     Object.keys(fontFamilyOverrides).length +
-    Object.keys(fontSizeOverrides).length;
+    Object.keys(fontSizeOverrides).length +
+    Object.keys(radiusOverrides).length;
 
   return (
     <>

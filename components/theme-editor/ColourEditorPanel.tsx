@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Palette } from 'lucide-react';
-import { DEFAULT_THEME } from '@/lib/theme-editor/default-theme';
+import {
+  DEFAULT_THEME,
+  DEFAULT_RADIUS_TOKENS,
+  RADIUS_TOKEN_LABELS,
+  COMPONENT_RADIUS_KEYS,
+} from '@/lib/theme-editor/default-theme';
 import {
   findTokenCategory,
   hexToRgb,
@@ -27,10 +32,16 @@ const CHECKERBOARD_STYLE = {
 } as const;
 
 export function ColourEditorPanel() {
+  const selectedCategoryId = useThemeEditorStore((s) => s.selectedCategoryId);
   const selectedTokenKey = useThemeEditorStore((s) => s.selectedTokenKey);
   const colourOverrides = useThemeEditorStore((s) => s.colourOverrides);
   const setTokenValue = useThemeEditorStore((s) => s.setTokenValue);
   const resetToken = useThemeEditorStore((s) => s.resetToken);
+  const getRadiusValue = useThemeEditorStore((s) => s.getRadiusValue);
+  const radiusOverrides = useThemeEditorStore((s) => s.radiusOverrides);
+  const resetRadiusToken = useThemeEditorStore((s) => s.resetRadiusToken);
+
+  const isShape = selectedCategoryId === 'shape';
 
   const currentValue = useMemo(() => {
     if (!selectedTokenKey) return '';
@@ -67,8 +78,341 @@ export function ColourEditorPanel() {
       <aside className="flex h-full w-80 shrink-0 flex-col border-l border-border bg-white">
         <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
           <Palette className="size-8 text-[#9CA3AF]" />
-          <p className="mt-3 text-sm text-[#6B7280]">Select a colour token</p>
-          <p className="mt-1 text-xs text-[#9CA3AF]">Click any colour swatch to edit</p>
+          <p className="mt-3 text-sm text-[#6B7280]">
+            {isShape ? 'Shape preview' : 'Select a colour token'}
+          </p>
+          <p className="mt-1 text-xs text-[#9CA3AF]">
+            {isShape
+              ? 'Use a slider or personality preset on the left'
+              : 'Click any colour swatch to edit'}
+          </p>
+        </div>
+      </aside>
+    );
+  }
+
+  if (isShape && COMPONENT_RADIUS_KEYS.includes(selectedTokenKey as (typeof COMPONENT_RADIUS_KEYS)[number])) {
+    const tokenKey = selectedTokenKey;
+    const radiusValue = getRadiusValue(tokenKey);
+    const isPill = radiusValue === 9999;
+    const defaultValue = DEFAULT_RADIUS_TOKENS[tokenKey] ?? 0;
+    const isModified =
+      tokenKey in radiusOverrides &&
+      radiusOverrides[tokenKey] !== DEFAULT_RADIUS_TOKENS[tokenKey];
+
+    const radiusForBox = isPill ? 9999 : radiusValue;
+    const cap = (px: number, max: number) => Math.min(px, max);
+
+    const Preview = () => {
+      if (tokenKey === 'radiusButton') {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div
+              style={{
+                width: 160,
+                height: 44,
+                background: 'var(--color-primary)',
+                color: 'var(--color-primary-foreground)',
+                borderRadius: radiusForBox,
+                fontSize: 13,
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'border-radius 0.15s ease',
+                userSelect: 'none',
+              }}
+            >
+              Button
+            </div>
+            <div
+              style={{
+                width: 160,
+                height: 44,
+                background: '#FFFFFF',
+                border: '1.5px solid var(--color-primary)',
+                color: 'var(--color-primary)',
+                borderRadius: radiusForBox,
+                fontSize: 13,
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'border-radius 0.15s ease',
+                userSelect: 'none',
+              }}
+            >
+              Outlined
+            </div>
+          </div>
+        );
+      }
+
+      if (tokenKey === 'radiusInput') {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div
+              style={{
+                width: 200,
+                height: 40,
+                background: '#FFFFFF',
+                border: '1.5px solid #E2E8F0',
+                borderRadius: radiusForBox,
+                padding: '0 12px',
+                display: 'flex',
+                alignItems: 'center',
+                color: '#9CA3AF',
+                fontSize: 12,
+                transition: 'border-radius 0.15s ease',
+              }}
+            >
+              Enter value...
+            </div>
+            <div
+              style={{
+                width: 200,
+                height: 40,
+                background: '#FFFFFF',
+                border: '1.5px solid var(--color-primary)',
+                borderRadius: radiusForBox,
+                padding: '0 12px',
+                display: 'flex',
+                alignItems: 'center',
+                color: '#9CA3AF',
+                fontSize: 12,
+                transition: 'border-radius 0.15s ease',
+              }}
+            >
+              Focused
+            </div>
+          </div>
+        );
+      }
+
+      if (tokenKey === 'radiusCard') {
+        const r = isPill ? 24 : cap(radiusValue, 24);
+        return (
+          <div
+            style={{
+              width: 200,
+              height: 80,
+              background: '#FFFFFF',
+              border: '1px solid #E2E8F0',
+              borderRadius: r,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+              padding: 12,
+              transition: 'border-radius 0.15s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              boxSizing: 'border-box',
+            }}
+          >
+            <div
+              style={{
+                height: 10,
+                width: '70%',
+                borderRadius: 6,
+                background: 'linear-gradient(90deg, #F1F5F9, #E2E8F0, #F1F5F9)',
+                backgroundSize: '200% 100%',
+              }}
+            />
+            <div
+              style={{
+                height: 10,
+                width: '55%',
+                borderRadius: 6,
+                background: 'linear-gradient(90deg, #F1F5F9, #E2E8F0, #F1F5F9)',
+                backgroundSize: '200% 100%',
+              }}
+            />
+          </div>
+        );
+      }
+
+      if (tokenKey === 'radiusModal') {
+        const r = isPill ? 28 : cap(radiusValue, 28);
+        return (
+          <div
+            style={{
+              width: 200,
+              height: 100,
+              background: '#FFFFFF',
+              border: '1px solid #E2E8F0',
+              borderRadius: r,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+              overflow: 'hidden',
+              transition: 'border-radius 0.15s ease',
+            }}
+          >
+            <div
+              style={{
+                height: 28,
+                background: '#F8FAFC',
+                borderBottom: '1px solid #E2E8F0',
+                borderTopLeftRadius: r,
+                borderTopRightRadius: r,
+              }}
+            />
+            <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div
+                style={{
+                  height: 10,
+                  width: '72%',
+                  borderRadius: 6,
+                  background: '#E2E8F0',
+                }}
+              />
+              <div
+                style={{
+                  height: 10,
+                  width: '48%',
+                  borderRadius: 6,
+                  background: '#F1F5F9',
+                }}
+              />
+            </div>
+          </div>
+        );
+      }
+
+      if (tokenKey === 'radiusChip') {
+        const r = radiusForBox;
+        const chipStyle = (active?: boolean) => ({
+          width: 52,
+          height: 24,
+          borderRadius: r,
+          border: '1px solid #E2E8F0',
+          background: active ? 'var(--color-primary)' : '#F8FAFC',
+          color: active ? 'var(--color-primary-foreground)' : '#374151',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 10,
+          fontWeight: 500,
+          transition: 'border-radius 0.15s ease',
+          userSelect: 'none' as const,
+        });
+        return (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={chipStyle(false)}>Tag</div>
+            <div style={chipStyle(false)}>Filter</div>
+            <div style={chipStyle(true)}>Active</div>
+          </div>
+        );
+      }
+
+      if (tokenKey === 'radiusBottomSheet') {
+        const r = isPill ? 32 : cap(radiusValue, 32);
+        return (
+          <div
+            style={{
+              width: 200,
+              height: 80,
+              background: '#FFFFFF',
+              border: '1px solid #E2E8F0',
+              borderRadius: `${r}px ${r}px 0 0`,
+              transition: 'border-radius 0.15s ease',
+              overflow: 'hidden',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div
+              style={{
+                width: 32,
+                height: 3,
+                borderRadius: 999,
+                background: '#E2E8F0',
+                margin: '8px auto 0',
+              }}
+            />
+          </div>
+        );
+      }
+
+      return null;
+    };
+
+    return (
+      <aside className="flex h-full w-80 shrink-0 flex-col border-l border-border bg-white">
+        <div className="shrink-0 border-b border-border px-4 py-4">
+          <p className="text-[10px] font-medium tracking-[0.2em] text-[#9CA3AF] uppercase">
+            Shape editor
+          </p>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto" style={{ padding: 20 }}>
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', margin: 0 }}>
+              {RADIUS_TOKEN_LABELS[tokenKey] ?? tokenKey}
+            </p>
+            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>
+              {tokenKey}
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Preview />
+          </div>
+
+          <div style={{ marginTop: 16, textAlign: 'center' }}>
+            {isPill ? (
+              <span style={{ fontSize: 20, fontWeight: 700, color: '#0F172A' }}>
+                Pill
+              </span>
+            ) : (
+              <>
+                <span style={{ fontSize: 32, fontWeight: 700, color: '#0F172A' }}>
+                  {radiusValue}
+                </span>
+                <span style={{ fontSize: 14, color: '#9CA3AF', marginLeft: 4 }}>
+                  dp
+                </span>
+              </>
+            )}
+          </div>
+
+          <div style={{ marginTop: 8, textAlign: 'center' }}>
+            <span style={{ fontSize: 11, color: '#9CA3AF' }}>
+              Default: {defaultValue === 9999 ? 'Pill' : `${defaultValue}dp`}
+            </span>
+            {isModified ? (
+              <>
+                <span style={{ fontSize: 11, color: '#9CA3AF' }}> · </span>
+                <button
+                  type="button"
+                  onClick={() => resetRadiusToken(tokenKey)}
+                  style={{
+                    border: 'none',
+                    background: 'none',
+                    padding: 0,
+                    fontSize: 11,
+                    color: '#DC2626',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Reset to default →
+                </button>
+              </>
+            ) : null}
+          </div>
+        </div>
+        <div className="shrink-0 border-t border-border px-3 py-3 text-center font-mono text-[11px] text-[#9CA3AF]">
+          ⌘S to save · Esc to close
+        </div>
+      </aside>
+    );
+  }
+
+  if (isShape) {
+    return (
+      <aside className="flex h-full w-80 shrink-0 flex-col border-l border-border bg-white">
+        <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+          <Palette className="size-8 text-[#9CA3AF]" />
+          <p className="mt-3 text-sm text-[#6B7280]">Shape preview</p>
+          <p className="mt-1 text-xs text-[#9CA3AF]">
+            Select a component slider to preview
+          </p>
         </div>
       </aside>
     );
