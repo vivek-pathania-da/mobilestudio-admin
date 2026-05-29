@@ -13,9 +13,9 @@ import {
 } from '@/lib/theme-editor/default-theme';
 import {
   buildClearColourOverridesPayload,
-  buildOverridesPayload,
   buildRadiusOverridesFromResolved,
-  buildRadiusPalettePayload,
+  buildThemeColourTokensPayload,
+  buildThemeRadiusPalettePayload,
 } from '@/lib/theme-editor/theme-editor.utils';
 import type { ThemeEditorState } from '@/lib/theme-editor/theme-editor.types';
 import type { AdvancedOptionsValue } from '@/components/theme-editor/ai-modal/AdvancedOptions';
@@ -457,13 +457,19 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
     } = get();
     set({ isSaving: true });
     try {
-      const tokens = buildOverridesPayload(colourOverrides);
+      const prev = savedSnapshot;
+      const tokens = buildThemeColourTokensPayload(
+        colourOverrides,
+        prev?.colourOverrides
+      );
       const fontFamilies = buildFontFamilyPayload(fontFamilyOverrides);
       const fontSizes = buildFontSizePayload(fontSizeOverrides);
-      const radiusPalette = buildRadiusPalettePayload(radiusOverrides);
+      const radiusPalette = buildThemeRadiusPalettePayload(
+        radiusOverrides,
+        prev?.radiusOverrides
+      );
       const body: UpdateThemeRequest = { themeName };
       if (clearAllOverrides) {
-        const prev = savedSnapshot;
         const clearedTokens = prev
           ? buildClearColourOverridesPayload(prev.colourOverrides)
           : {};
@@ -481,8 +487,7 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
           Object.keys(clearedSizes).length > 0 ? clearedSizes : {};
       } else {
         // If a previously-saved override was removed locally (set back to default),
-        // we must explicitly send the default value to clear it server-side.
-        const prev = savedSnapshot;
+        // we must explicitly send the default value to clear it server-side (fonts).
         const removedFamilyKeys: Record<string, string> = {};
         const removedSizeKeys: Record<string, number> = {};
         if (prev) {

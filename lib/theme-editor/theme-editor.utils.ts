@@ -236,6 +236,66 @@ export function buildRadiusPalettePayload(
   return out;
 }
 
+/** Reset semantic radius keys removed locally since last save (PUT merge keeps stale values otherwise). */
+export function buildClearRadiusPalettePayload(
+  previousOverrides: Record<string, number>
+): Partial<RadiusPalette> {
+  const out: Partial<RadiusPalette> = {};
+  for (const key of SEMANTIC_RADIUS_PALETTE_KEYS) {
+    if (!(key in previousOverrides)) continue;
+    const def = DEFAULT_RADIUS_TOKENS[key];
+    if (def !== undefined) {
+      out[key] = def;
+    }
+  }
+  return out;
+}
+
+function collectRemovedKeys(
+  previous: Record<string, unknown>,
+  current: Record<string, unknown>
+): string[] {
+  return Object.keys(previous).filter((key) => !(key in current));
+}
+
+/** Merge PUT colour tokens: clear keys dropped since last save, then apply current overrides. */
+export function buildThemeColourTokensPayload(
+  colourOverrides: Record<string, string>,
+  previousColourOverrides: Record<string, string> | null | undefined
+): Record<string, string> {
+  const tokens = buildOverridesPayload(colourOverrides);
+  if (!previousColourOverrides) return tokens;
+
+  const removed: Record<string, string> = {};
+  for (const key of collectRemovedKeys(previousColourOverrides, colourOverrides)) {
+    removed[key] = previousColourOverrides[key];
+  }
+  const cleared = buildClearColourOverridesPayload(removed);
+  return { ...cleared, ...tokens };
+}
+
+/** Merge PUT radius palette: clear semantic keys dropped since last save, then apply current overrides. */
+export function buildThemeRadiusPalettePayload(
+  radiusOverrides: Record<string, number>,
+  previousRadiusOverrides: Record<string, number> | null | undefined
+): Partial<RadiusPalette> {
+  const palette = buildRadiusPalettePayload(radiusOverrides);
+  if (!previousRadiusOverrides) return palette;
+
+  const removed: Record<string, number> = {};
+  for (const key of collectRemovedKeys(previousRadiusOverrides, radiusOverrides)) {
+    if (
+      SEMANTIC_RADIUS_PALETTE_KEYS.includes(
+        key as (typeof SEMANTIC_RADIUS_PALETTE_KEYS)[number]
+      )
+    ) {
+      removed[key] = previousRadiusOverrides[key];
+    }
+  }
+  const cleared = buildClearRadiusPalettePayload(removed);
+  return { ...cleared, ...palette };
+}
+
 export function getCategoryTokenCount(categoryId: string): number {
   if (categoryId === 'typography') {
     return 18;
