@@ -19,11 +19,15 @@ function normalizeAiGenerateResponse(data: AiGenerateResponse): AiGenerateRespon
   return data;
 }
 
+/** Bedrock + token derivation can exceed the default 15s client timeout. */
+const AI_GENERATE_TIMEOUT_MS = 120_000;
+
 export const aiThemeApi = {
   generate: async (data: AiGenerateRequest): Promise<AiGenerateResponse> => {
     const res = await apiClient.post<ApiSuccess<AiGenerateResponse>>(
       '/v1/themes/ai-generate',
-      data
+      data,
+      { timeout: AI_GENERATE_TIMEOUT_MS }
     );
     return normalizeAiGenerateResponse(res.data.data);
   },

@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { aiThemeApi } from '@/lib/api/ai-theme.api';
-import { getApiErrorMessage } from '@/lib/api/client';
+import { getAiGenerateErrorMessage } from '@/lib/api/client';
 import { firebaseApi } from '@/lib/api/firebase.api';
 import { themesApi } from '@/lib/api/themes.api';
 import {
@@ -18,7 +18,13 @@ import {
   buildRadiusPalettePayload,
 } from '@/lib/theme-editor/theme-editor.utils';
 import type { ThemeEditorState } from '@/lib/theme-editor/theme-editor.types';
-import type { AiGenerateResponse, ThemeResponse, UpdateThemeRequest } from '@/types/api';
+import type { AdvancedOptionsValue } from '@/components/theme-editor/ai-modal/AdvancedOptions';
+import type {
+  AiGenerateRequest,
+  AiGenerateResponse,
+  ThemeResponse,
+  UpdateThemeRequest,
+} from '@/types/api';
 import { TOKEN_CATEGORIES } from '@/lib/theme-editor/token-categories';
 import {
   fromApiHexColor,
@@ -187,7 +193,11 @@ interface ThemeEditorStore extends ThemeEditorState {
   openAiModal: () => void;
   closeAiModal: () => void;
   clearAiResult: () => void;
-  generateAiTheme: (prompt: string, customerId?: string) => Promise<void>;
+  generateAiTheme: (
+    prompt: string,
+    advancedOptions: AdvancedOptionsValue,
+    customerId?: string
+  ) => Promise<void>;
   applyAiTheme: () => void;
   undoAiTheme: () => void;
 }
@@ -544,15 +554,53 @@ export const useThemeEditorStore = create<ThemeEditorStore>((set, get) => ({
 
   clearAiResult: () => set({ aiResult: null, aiError: null }),
 
-  generateAiTheme: async (prompt: string, customerId?: string) => {
+  generateAiTheme: async (
+    prompt: string,
+    advancedOptions: AdvancedOptionsValue,
+    customerId?: string
+  ) => {
     set({ aiLoading: true, aiError: null, aiResult: null });
     try {
-      const result = await aiThemeApi.generate({ prompt, customerId });
+      const effectivePrompt =
+        prompt.trim() || 'Generate a theme from the provided image';
+
+      const hasImage = Boolean(
+        advancedOptions.image && advancedOptions.brandColours.length === 0
+      );
+      if (!hasImage && effectivePrompt.length < 5) {
+        set({
+          aiLoading: false,
+          aiError: 'Please enter at least 5 characters or upload an image.',
+        });
+        return;
+      }
+
+      const request: AiGenerateRequest = { prompt: effectivePrompt };
+      if (customerId) request.customerId = customerId;
+
+      if (advancedOptions.themeMode !== 'auto') {
+        request.themeMode = advancedOptions.themeMode;
+      }
+
+      if (advancedOptions.brandColours.length > 0) {
+        request.primaryColours = advancedOptions.brandColours.map((c) => c.hex);
+      }
+
+      if (advancedOptions.darkVersionMode) {
+        request.darkVersionMode = true;
+      }
+
+      if (advancedOptions.image && advancedOptions.brandColours.length === 0) {
+        request.image = advancedOptions.image.base64;
+        request.imageMediaType = advancedOptions.image.mediaType;
+      }
+
+      const result = await aiThemeApi.generate(request);
       set({ aiLoading: false, aiResult: result });
     } catch (err: unknown) {
       set({
         aiLoading: false,
-        aiError: getApiErrorMessage(err),
+        aiError: getAiGenerateErrorMessage(err),
       });
     }
   },

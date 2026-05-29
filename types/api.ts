@@ -221,6 +221,11 @@ export interface UpdateThemeRequest {
 export interface AiGenerateRequest {
   prompt: string;
   customerId?: string;
+  themeMode?: 'light' | 'dark';
+  primaryColours?: string[];
+  image?: string;
+  imageMediaType?: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+  darkVersionMode?: boolean;
 }
 
 export interface AiPalette {

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { useThemeEditorStore } from '@/stores/theme-editor.store';
 import { PromptInput } from './ai-modal/PromptInput';
+import type { AdvancedOptionsValue } from './ai-modal/AdvancedOptions';
 import { LoadingState } from './ai-modal/LoadingState';
 import { ResultState } from './ai-modal/ResultState';
 
@@ -15,16 +16,26 @@ export function AiGeneratorModal() {
     closeAiModal, generateAiTheme, applyAiTheme, clearAiResult, customerId,
   } = useThemeEditorStore();
   const [promptForRegenerate, setPromptForRegenerate] = useState('');
+  const [lastAdvancedOptions, setLastAdvancedOptions] = useState<AdvancedOptionsValue>({
+    themeMode: 'auto',
+    brandColours: [],
+    darkVersionMode: false,
+    image: null,
+  });
 
   if (!aiModalOpen) return null;
 
-  const handleGenerate = (prompt: string) => {
+  const handleGenerate = (
+    prompt: string,
+    advancedOptions: AdvancedOptionsValue
+  ) => {
     setPromptForRegenerate(prompt);
-    void generateAiTheme(prompt, customerId);
+    setLastAdvancedOptions(advancedOptions);
+    void generateAiTheme(prompt, advancedOptions, customerId);
   };
 
   const handleRegenerate = (prompt: string) => {
-    void generateAiTheme(prompt, customerId);
+    void generateAiTheme(prompt, lastAdvancedOptions, customerId);
   };
 
   const handleNewPrompt = () => {

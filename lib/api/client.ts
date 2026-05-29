@@ -114,3 +114,24 @@ export function getApiErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return 'Something went wrong';
 }
+
+/** Long-running Bedrock calls; prefer API `message` when present. */
+export function getAiGenerateErrorMessage(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as { message?: string } | undefined;
+    if (data?.message) return data.message;
+
+    if (error.code === 'ECONNABORTED') {
+      return 'AI generation timed out. Image requests can take up to two minutes — please try again.';
+    }
+
+    const status = error.response?.status;
+    if (status === 429) {
+      return 'AI service is busy. Please try again in a moment.';
+    }
+    if (status === 503) {
+      return 'AI service is temporarily unavailable. Please try again shortly.';
+    }
+  }
+  return getApiErrorMessage(error);
+}
