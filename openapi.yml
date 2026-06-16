@@ -6,7 +6,9 @@ openapi: 3.0.1
 info:
   title: MobileStudio API
   version: 1.0.0
-  description: Authentication API for MobileStudio. All endpoints are under /v1.
+  description: >
+    MobileStudio serverless API — authentication, flights, cart, bookings, customers, themes, and dashboard.
+    All endpoints are under /v1.
   x-internal-notes:
     tokenStorageGuidance:
       - "Access token: store in memory only (JavaScript variable). Do NOT store in localStorage or sessionStorage - vulnerable to XSS."
@@ -56,6 +58,16 @@ tags:
     description: >
       Shopping cart for authenticated users — legs, passengers, and add-ons.
       All routes require a Bearer access token. Cart TTL and totals are enforced server-side.
+  - name: Bookings
+    description: >
+      Multi-leg flight bookings (1–4 legs) for authenticated users. Each leg references a separate
+      `flightId` in `FlightOffers`; `cabinClass` applies to the whole booking. Passengers assign
+      seats and add-ons per leg via `legOrder` (server assigns `legId`). List endpoints are split by
+      travel date — `GET /bookings/upcoming` (latest leg not yet departed) and
+      `GET /bookings/past` (latest leg departed). Also supports passenger updates, per-leg seat/add-on
+      changes, single-leg flight changes, cancellation (refund from earliest departure), check-in with
+      per-leg PDF boarding passes (S3), multi-event `.ics` calendar export, and a public mobile check-in
+      HTML page.
   - name: Theme
     description: >
       Per-customer theme overrides and activation. GET active theme is public; all other theme
@@ -903,6 +915,91 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /v1/admin/users:
+    get:
+      summary: List users (admin only)
+      description: >
+        Returns basic user details so the admin UI can select a user before performing
+        administrative actions.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Users returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AdminUserListItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/admin/users/{userId}/bookings:
+    get:
+      summary: List bookings for a user (admin only)
+      description: >
+        Returns minimal booking identifiers so the admin UI can populate a booking dropdown.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Bookings returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AdminBookingListItem'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidUserId:
+                  value:
+                    success: false
+                    message: userId must be a UUID
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: Caller is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /v1/dashboard/metrics:
     get:
       summary: Dashboard metrics (admin)
@@ -980,6 +1077,10 @@ paths:
       summary: Search flights (outbound or inbound leg)
       description: >
         Returns card-ready flight offers for the requested route/date.
+        `departureEpoch` on each result is projected from the requested `departureDate` and the
+        offer's `departureTimeLocal` (mock data uses a fixed route key; times align to the searched date).
+        Connecting cards (`stops.count` > 0) include `segmentFlightIds` and `segments[]` with per-leg
+        offer UUIDs and airports/times — use those when building `POST /v1/bookings` legs.
         Round-trip behavior is handled by calling this endpoint twice:
         first for outbound, then again for inbound with swapped airports and updated date.
         No multicity support in v1.
@@ -1786,6 +1887,669 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /v1/bookings:
+    post:
+      summary: Create a new multi-leg booking
+      description: >
+        Supports 1–4 flight legs per booking (outbound, connecting, return). Each leg references
+        a per-segment `flightId` in `FlightOffers` (use `segmentFlightIds` from search for
+        connecting cards — not the parent BLR→SIN id on every leg). For connecting itineraries,
+        include `segment` on each leg with that leg's airports and local times from search
+        `segments[]` so stored snapshots show BLR→MAA and MAA→SIN instead of the full route on
+        every leg. Passengers provide per-leg seat and add-on assignments via `legOrder` (0-based);
+        the server assigns `legId` UUIDs. `cabinClass` applies to the entire booking.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+            examples:
+              singleLeg:
+                summary: One leg, one passenger
+                value:
+                  legs:
+                    - flightId: 55555555-5555-4555-8555-555555555555
+                      fareClassCode: LITE
+                      departureDate: '2026-08-15'
+                  cabinClass: 1
+                  contactEmail: john.doe@example.com
+                  contactPhone: '+44123456789'
+                  passengers:
+                    - type: adult
+                      title: Mr
+                      firstName: John
+                      lastName: Doe
+                      dateOfBirth: '1990-01-15'
+                      nationality: GB
+                      passportNumber: AB123456
+                      passportExpiry: '2030-12-31'
+                      legs:
+                        - legOrder: 0
+                          seatNumber: 14A
+                          seatSelection:
+                            category: paid_35
+                            seatType: window
+                            price: 35
+                          addons:
+                            baggage:
+                              extraType: extra_bag_10kg
+                              label: '+10 kg'
+                              weightKg: 10
+                              price: 55
+                            mealSelection:
+                              meal: vegetarian
+                              mealCode: VGML
+                              mealName: Vegetarian Meal
+                              price: 0
+                  tripProtection:
+                    planId: trip_protection_basic
+                    planName: Trip Protection
+                    price: 34
+                    coverageAmount: 10000
+                    coverageCurrency: USD
+              multiLeg:
+                summary: Two legs, two passengers
+                value:
+                  legs:
+                    - flightId: 55555555-5555-4555-8555-555555555555
+                      fareClassCode: LITE
+                      departureDate: '2026-08-15'
+                    - flightId: 77777777-7777-4777-8777-777777777777
+                      fareClassCode: FLEX
+                      departureDate: '2026-08-20'
+                  cabinClass: 1
+                  contactEmail: family@example.com
+                  contactPhone: '+919876543210'
+                  passengers:
+                    - type: adult
+                      title: Mr
+                      firstName: Raj
+                      lastName: Sharma
+                      dateOfBirth: '1985-06-20'
+                      nationality: IN
+                      passportNumber: Z1234567
+                      passportExpiry: '2031-03-15'
+                      legs:
+                        - legOrder: 0
+                          seatNumber: 12A
+                        - legOrder: 1
+                          seatNumber: 8C
+                    - type: adult
+                      title: Mrs
+                      firstName: Priya
+                      lastName: Sharma
+                      dateOfBirth: '1987-11-02'
+                      nationality: IN
+                      passportNumber: Z7654321
+                      passportExpiry: '2031-03-15'
+                      legs:
+                        - legOrder: 0
+                          seatNumber: 12B
+                        - legOrder: 1
+                          seatNumber: 8D
+              connectingFlight:
+                summary: AI238 BLR→SIN via MAA (two segment flightIds + segment times)
+                value:
+                  legs:
+                    - flightId: a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1
+                      fareClassCode: VALUE
+                      departureDate: '2026-05-22'
+                      segment:
+                        fromAirportCode: BLR
+                        toAirportCode: MAA
+                        fromAirportName: Bengaluru
+                        toAirportName: Chennai
+                        departureTimeLocal: '07:00'
+                        arrivalTimeLocal: '08:30'
+                    - flightId: a2a2a2a2-a2a2-4a2a-8a2a-a2a2a2a2a2a2
+                      fareClassCode: VALUE
+                      departureDate: '2026-05-22'
+                      segment:
+                        fromAirportCode: MAA
+                        toAirportCode: SIN
+                        fromAirportName: Chennai
+                        toAirportName: Singapore Changi
+                        departureTimeLocal: '09:40'
+                        arrivalTimeLocal: '15:30'
+                  cabinClass: 1
+                  contactEmail: yogesh@example.com
+                  contactPhone: '+919876543210'
+                  passengers:
+                    - type: adult
+                      title: Mr
+                      firstName: Yogesh
+                      lastName: Tanwar
+                      dateOfBirth: '1990-01-15'
+                      nationality: IN
+                      passportNumber: P1234567
+                      passportExpiry: '2030-01-15'
+                      legs:
+                        - legOrder: 0
+                          seatNumber: 5G
+                        - legOrder: 1
+                          seatNumber: 4E
+      responses:
+        '201':
+          description: Booking created with passengers and per-leg assignments
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BookingWithPassengers'
+        '400':
+          $ref: '#/components/responses/BookingValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Flight not found in FlightOffers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: 'Flight not found for flightId: 00000000-0000-4000-8000-000000000000'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/upcoming:
+    get:
+      summary: List upcoming bookings
+      description: >
+        Returns bookings where the **latest leg** has not yet departed (trip still in the future).
+        Multi-leg trips remain here until the final leg departs. Sorted by earliest leg departure
+        ascending (soonest first). Each item includes the `legs` array without passenger detail.
+        Optional `status` query filter matches `Booking.status`.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingStatusFilter'
+      responses:
+        '200':
+          description: List of upcoming bookings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/past:
+    get:
+      summary: List past bookings
+      description: >
+        Returns bookings where the **latest leg** has already departed (trip is over).
+        Sorted by latest leg departure descending (most recent first). Each item includes the
+        `legs` array without passenger detail. Optional `status` query filter matches `Booking.status`.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingStatusFilter'
+      responses:
+        '200':
+          description: List of past bookings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/reference/{bookingReference}:
+    get:
+      summary: Get booking by reference code
+      description: >
+        Looks up a booking by its 6-character alphanumeric reference (e.g. `EK8X3F`).
+        Auth required; returns booking only if it belongs to the authenticated user.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingReference'
+      responses:
+        '200':
+          description: Booking with passengers
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BookingWithPassengers'
+        '400':
+          $ref: '#/components/responses/BookingValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/{bookingId}:
+    get:
+      summary: Get booking by id
+      description: Returns full booking with all passengers. Ownership enforced.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Booking with passengers
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BookingWithPassengers'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      summary: Cancel booking
+      description: >
+        Cancels all legs. Refund is based on the earliest leg departure: >24h 100%, 12–24h 50%,
+        <12h 0%. Sets `cancellationInfo` and updates `paymentStatus`.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Cancelled booking
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BookingRecord'
+        '400':
+          $ref: '#/components/responses/BookingValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/{bookingId}/passengers/{passengerId}:
+    patch:
+      summary: Update passenger details
+      description: >
+        Updates `specialAssistance`, `frequentFlyerNumber`, `passportNumber`, or `passportExpiry`.
+        Booking must be `confirmed` or `changed`; the earliest leg must not have departed.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/BookingPassengerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBookingPassengerRequest'
+      responses:
+        '200':
+          description: Updated passenger
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BookingPassenger'
+        '400':
+          $ref: '#/components/responses/BookingValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Booking or passenger not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/{bookingId}/passengers/{passengerId}/seat:
+    patch:
+      summary: Change passenger seat on one leg
+      description: >
+        Updates `seatNumber` for the passenger on the leg identified by `legId`.
+        Duplicate seats on the same leg across passengers are rejected.
+        If a boarding pass exists on that leg assignment, its `seat` field is updated too.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/BookingPassengerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBookingSeatRequest'
+      responses:
+        '200':
+          description: Updated passenger
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BookingPassenger'
+        '400':
+          $ref: '#/components/responses/BookingValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Booking or passenger not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/{bookingId}/passengers/{passengerId}/addons:
+    patch:
+      summary: Update passenger add-ons on one leg
+      description: >
+        Updates optional add-ons for the passenger on the leg identified by `legId`.
+        Recalculates that leg's `passengerFare`, booking `fareBreakdown`, and `totalAmount`.
+        At least one add-on field (besides `legId`) must be present.
+        Set `extraBaggage` or `meal` to `null` to remove.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/BookingPassengerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBookingAddonsRequest'
+      responses:
+        '200':
+          description: Updated passenger and booking total
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UpdateBookingAddonsResult'
+        '400':
+          $ref: '#/components/responses/BookingValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Booking or passenger not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/{bookingId}/change-flight:
+    post:
+      summary: Change one leg to a different flight
+      description: >
+        Switches a single leg (`legId`) to a new flight with the same origin and destination.
+        Recalculates fares for that leg, resets check-in state, clears boarding passes on the
+        changed leg only, and appends a `changeHistory` entry. Not allowed after check-in is complete.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeBookingFlightRequest'
+      responses:
+        '200':
+          description: Updated booking with fare difference
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ChangeBookingFlightResult'
+        '400':
+          $ref: '#/components/responses/BookingValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Booking or new flight not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/{bookingId}/check-in:
+    post:
+      summary: Check in all passengers for all legs
+      description: >
+        Check-in window is based on the **earliest** leg departure (opens 48h before, closes 1h before).
+        For each passenger on each leg: generates boarding pass data (group, gate, barcode with `legOrder`),
+        creates a PDF at `boarding-passes/{bookingId}/{passengerId}/leg-{legOrder}.pdf` (S3),
+        and returns a pre-signed `pdfUrl` (24h expiry) on each leg assignment.
+        Sets booking `checkInStatus` to `completed` and `status` to `checked_in`.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Checked-in booking with boarding passes
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BookingWithPassengers'
+        '400':
+          description: >
+            Check-in window closed, already checked in, or not yet open.
+            When not yet open, response may include `hoursUntilOpen`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/CheckInNotOpenError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/{bookingId}/boarding-passes:
+    get:
+      summary: Get boarding passes with fresh PDF URLs
+      description: >
+        Returns all passengers with per-leg boarding pass data. Re-generates pre-signed S3 URLs from each
+        leg assignment's stored `s3Key` (original URLs expire after 24 hours). Booking must be checked in.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Passengers with boarding passes
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BoardingPassesResult'
+        '400':
+          $ref: '#/components/responses/BookingValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/{bookingId}/checkin-page:
+    get:
+      summary: Mobile check-in confirmation page (HTML)
+      description: >
+        Returns a mobile-optimised HTML page for display in an in-app WebView.
+        **No authentication required.** Shows each leg in order with flight details and per-passenger
+        boarding info (seat, group, gate, boarding time), plus booking reference at the bottom.
+      tags: [Bookings]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: HTML check-in confirmation page
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/bookings/{bookingId}/calendar:
+    get:
+      summary: Download calendar events (.ics)
+      description: >
+        Returns an iCalendar file with one `VEVENT` per leg. Auth required; ownership enforced.
+        Filename is `{bookingReference}.ics`. Response is raw `.ics` content, not JSON.
+      tags: [Bookings]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: iCalendar file
+          content:
+            text/calendar:
+              schema:
+                type: string
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: attachment; filename="EK8X3F.ics"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /v1/themes/ai-generate:
     post:
       summary: Generate theme from AI prompt (admin)
@@ -2178,6 +2942,297 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /v1/notifications:
+    get:
+      summary: List notifications for the authenticated user
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: unreadOnly
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['true', 'false']
+          description: When true, only returns unread notifications.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Max items to return (default 50, max 100).
+      responses:
+        '200':
+          description: Notifications returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Notification'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/notifications/unread-count:
+    get:
+      summary: Get unread notification count for authenticated user
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Unread count returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [count]
+                        properties:
+                          count:
+                            type: integer
+                            minimum: 0
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/notifications/read-all:
+    patch:
+      summary: Mark all notifications as read for authenticated user
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Count of notifications marked read
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [markedAsRead]
+                        properties:
+                          markedAsRead:
+                            type: integer
+                            minimum: 0
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/notifications/{notificationId}/read:
+    patch:
+      summary: Mark a notification as read
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Updated notification
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Notification'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Notification belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Notification not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/notifications/mock/flight-delayed:
+    post:
+      summary: Mock flight delayed notification (admin only)
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MockFlightDelayedRequest'
+      responses:
+        '201':
+          description: Notification created and booking updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MockNotificationResult'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Booking not found for bookingId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/notifications/mock/flight-cancelled:
+    post:
+      summary: Mock flight cancelled notification + cancel booking (admin only)
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MockFlightCancelledRequest'
+      responses:
+        '201':
+          description: Notification created and booking updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MockNotificationResult'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Booking not found for bookingId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/notifications/mock/gate-changed:
+    post:
+      summary: Mock gate changed notification + update booking gate (admin only)
+      tags: [Notifications]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MockGateChangedRequest'
+      responses:
+        '201':
+          description: Notification created and booking updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MockNotificationResult'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Booking not found for bookingId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -2252,7 +3307,104 @@ components:
       description: >
         Theme row id from create/list (UUID). For the synthetic default row only, the literal `default` may appear
         in GET active-theme responses — do not use `default` in mutating paths.
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      description: Booking identifier (UUID). Never the literal `reference`.
+    BookingPassengerId:
+      name: passengerId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Passenger identifier within the booking.
+    BookingReference:
+      name: bookingReference
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-HJ-NP-Z2-9]{6}$'
+        example: EK8X3F
+      description: >
+        6-character booking reference (uppercase alphanumeric; excludes O and I).
+    BookingStatusFilter:
+      name: status
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/BookingStatus'
+      description: Optional filter on `Booking.status` (e.g. `confirmed`, `cancelled`).
   responses:
+    UnauthorizedError:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            message: Unauthorized
+    ForbiddenError:
+      description: Authenticated but not permitted (e.g. booking belongs to another user)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            message: Booking belongs to another user
+    BookingValidationError:
+      description: >
+        Booking validation error — duplicate seat on a leg, missing leg assignment per passenger,
+        leg already departed, invalid cabin class, check-in window closed, cannot change after check-in, etc.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            duplicateSeat:
+              value:
+                success: false
+                message: Duplicate seat 14A on leg 0
+            missingLegAssignment:
+              value:
+                success: false
+                message: Each passenger must have a leg assignment for every leg in the booking
+            legNotFound:
+              value:
+                success: false
+                message: legId 00000000-0000-4000-8000-000000000000 not found in this booking
+            legDeparted:
+              value:
+                success: false
+                message: Flight EK201 on leg 0 has already departed
+            invalidCabinClass:
+              value:
+                success: false
+                message: cabinClass must be 1 (economy), 2 (premium_economy), 3 (business), or 4 (first)
+            checkInClosed:
+              value:
+                success: false
+                message: Check-in is closed. Please proceed to the airport.
+            notCheckedIn:
+              value:
+                success: false
+                message: Booking is not checked in yet
+            changeAfterCheckIn:
+              value:
+                success: false
+                message: Cannot change flight after check-in is complete
+            routeMismatch:
+              value:
+                success: false
+                message: New flight must have same origin and destination as the leg being changed
     InternalServerError:
       description: Internal server error
       content:
@@ -2263,6 +3415,147 @@ components:
             success: false
             message: Internal server error
   schemas:
+    AdminUserListItem:
+      type: object
+      required: [userId, email, name, role, createdAt]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+        createdAt:
+          type: string
+          format: date-time
+
+    AdminBookingListItem:
+      type: object
+      required: [bookingId]
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        bookingReference:
+          type: string
+          example: AB12CD
+        createdAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          example: confirmed
+
+    NotificationType:
+      type: string
+      enum: [ticket_confirmed, flight_cancelled, flight_delayed, gate_changed]
+
+    NotificationMetadata:
+      type: object
+      description: Type-specific metadata for notification.
+      additionalProperties: true
+
+    Notification:
+      type: object
+      required:
+        - notificationId
+        - userId
+        - type
+        - title
+        - body
+        - bookingId
+        - bookingReference
+        - flightNumber
+        - origin
+        - destination
+        - isRead
+        - metadata
+        - createdAt
+        - ttl
+      properties:
+        notificationId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/NotificationType'
+        title:
+          type: string
+        body:
+          type: string
+        bookingId:
+          type: string
+          format: uuid
+        bookingReference:
+          type: string
+        flightNumber:
+          type: string
+        origin:
+          type: string
+        destination:
+          type: string
+        isRead:
+          type: boolean
+        metadata:
+          $ref: '#/components/schemas/NotificationMetadata'
+        createdAt:
+          type: string
+          format: date-time
+        ttl:
+          type: integer
+          description: DynamoDB TTL epoch seconds (30 days)
+
+    MockFlightDelayedRequest:
+      type: object
+      required: [bookingId, delayMins, newDepartureAt]
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        delayMins:
+          type: integer
+          minimum: 1
+        newDepartureAt:
+          type: string
+          format: date-time
+
+    MockFlightCancelledRequest:
+      type: object
+      required: [bookingId]
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+
+    MockGateChangedRequest:
+      type: object
+      required: [bookingId, oldGate, newGate]
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        oldGate:
+          type: string
+        newGate:
+          type: string
+
+    MockNotificationResult:
+      type: object
+      required: [notification, booking]
+      properties:
+        notification:
+          $ref: '#/components/schemas/Notification'
+        booking:
+          $ref: '#/components/schemas/BookingWithPassengers'
+
     SuccessResponse:
       type: object
       properties:
@@ -2781,7 +4074,45 @@ components:
               amount: { type: number, example: 34 }
               currency: { type: string, example: GBP }
             required: [extraType, pricingModel, amount, currency]
+        segmentFlightIds:
+          type: array
+          description: Per-leg offer UUIDs for connecting itineraries (same order as segments). Omitted for direct flights.
+          items:
+            type: string
+            format: uuid
+          example:
+            - a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1
+            - a2a2a2a2-a2a2-4a2a-8a2a-a2a2a2a2a2a2
+        segments:
+          type: array
+          description: Resolved segment offers when the card has one or more stops.
+          items:
+            $ref: '#/components/schemas/FlightSearchSegment'
       required: [flightId, routeDateKey, departureEpoch, airline, timing, stops, selectedFare, policies, extrasPreview, expiresAt]
+
+    FlightSearchSegment:
+      type: object
+      properties:
+        legOrder:
+          type: integer
+          minimum: 0
+          example: 0
+        flightId:
+          type: string
+          format: uuid
+        fromAirportCode:
+          type: string
+          example: BLR
+        toAirportCode:
+          type: string
+          example: MAA
+        departureTimeLocal:
+          type: string
+          example: "07:00"
+        arrivalTimeLocal:
+          type: string
+          example: "08:30"
+      required: [legOrder, flightId, fromAirportCode, toAirportCode, departureTimeLocal, arrivalTimeLocal]
 
     FlightFareOptionItem:
       type: object
@@ -4220,3 +5551,833 @@ components:
           type: string
         details:
           $ref: '#/components/schemas/AddonDetails'
+
+    BookingStatus:
+      type: string
+      enum: [confirmed, changed, checked_in, cancelled, completed]
+
+    CheckInStatus:
+      type: string
+      enum: [not_open, open, completed]
+
+    BookingPaymentStatus:
+      type: string
+      enum: [paid, refunded, partially_refunded]
+
+    BookingPassengerTitle:
+      type: string
+      enum: [Mr, Mrs, Ms, Dr]
+
+    BookingExtraBaggage:
+      type: string
+      enum: ['15kg', '23kg', '32kg']
+
+    BookingMealType:
+      type: string
+      enum: [standard, vegetarian, vegan, halal, kosher, child_meal]
+
+    BookingFlightSnapshot:
+      type: object
+      required:
+        - flightId
+        - flightNumber
+        - airline
+        - airlineCode
+        - origin
+        - destination
+        - originName
+        - destinationName
+        - departureAt
+        - arrivalAt
+        - durationMins
+        - aircraftType
+        - fareClassCode
+        - fareName
+        - basePricePerPerson
+        - taxPerPerson
+        - currency
+      properties:
+        flightId:
+          type: string
+          format: uuid
+        flightNumber:
+          type: string
+          example: EK201
+        airline:
+          type: string
+          example: Emirates
+        airlineCode:
+          type: string
+          example: EK
+        origin:
+          type: string
+          example: DEL
+        destination:
+          type: string
+          example: BOM
+        originName:
+          type: string
+          example: Delhi
+        destinationName:
+          type: string
+          example: Mumbai
+        departureAt:
+          type: string
+          format: date-time
+        arrivalAt:
+          type: string
+          format: date-time
+        durationMins:
+          type: integer
+          minimum: 1
+        gate:
+          type: string
+          nullable: true
+          description: Optional gate shown before check-in (first leg).
+          example: B44
+        aircraftType:
+          type: string
+          example: Airbus A320
+        fareClassCode:
+          type: string
+          example: LITE
+        fareName:
+          type: string
+          example: LITE
+        basePricePerPerson:
+          type: number
+        taxPerPerson:
+          type: number
+        currency:
+          type: string
+          example: USD
+
+    BookingSeatCategory:
+      type: string
+      enum: [free, XL, paid_20, paid_35]
+
+    BookingSeatSelection:
+      type: object
+      required: [category, price]
+      description: Paid/free seat from seatmap — price from catalog at selection time.
+      properties:
+        category:
+          $ref: '#/components/schemas/BookingSeatCategory'
+        seatType:
+          type: string
+          enum: [window, middle, aisle]
+        price:
+          type: number
+          minimum: 0
+
+    BookingBaggageAddonSelection:
+      type: object
+      required: [extraType, price]
+      properties:
+        extraType:
+          type: string
+          example: extra_bag_10kg
+        label:
+          type: string
+          example: '+10 kg'
+        weightKg:
+          type: number
+        pieces:
+          type: number
+        price:
+          type: number
+          minimum: 0
+
+    BookingMealAddonSelection:
+      type: object
+      required: [meal, price]
+      properties:
+        meal:
+          $ref: '#/components/schemas/BookingMealType'
+        mealCode:
+          type: string
+          example: VGML
+        mealName:
+          type: string
+          example: Vegetarian Meal
+        price:
+          type: number
+          minimum: 0
+
+    BookingTripProtection:
+      type: object
+      required: [planId, planName, price]
+      description: Booking-level trip protection (one per booking).
+      properties:
+        planId:
+          type: string
+          example: trip_protection_basic
+        planName:
+          type: string
+          example: Trip Protection
+        price:
+          type: number
+          minimum: 0
+        coverageAmount:
+          type: number
+        coverageCurrency:
+          type: string
+
+    BookingFareBreakdown:
+      type: object
+      required:
+        - baseFare
+        - taxes
+        - seatsTotal
+        - baggageTotal
+        - mealsTotal
+        - tripProtectionTotal
+        - otherAddonsTotal
+        - addonsTotal
+        - total
+      properties:
+        baseFare:
+          type: number
+        taxes:
+          type: number
+        seatsTotal:
+          type: number
+          description: Sum of paid seat fees across all passengers and legs
+        baggageTotal:
+          type: number
+        mealsTotal:
+          type: number
+        tripProtectionTotal:
+          type: number
+        otherAddonsTotal:
+          type: number
+          description: Priority boarding, lounge access, etc.
+        addonsTotal:
+          type: number
+          description: seatsTotal + baggageTotal + mealsTotal + tripProtectionTotal + otherAddonsTotal
+        total:
+          type: number
+
+    BookingPassengerFare:
+      type: object
+      required: [baseFare, taxes, seatPrice, addonsTotal, total]
+      properties:
+        baseFare:
+          type: number
+        taxes:
+          type: number
+        seatPrice:
+          type: number
+        addonsTotal:
+          type: number
+          description: Non-seat add-ons for this passenger on this leg
+        total:
+          type: number
+
+    BookingSpecialAssistance:
+      type: object
+      required:
+        - wheelchairRequired
+        - visualImpairment
+        - hearingImpairment
+        - oxygenRequired
+        - stretcherRequired
+        - notes
+      properties:
+        wheelchairRequired:
+          type: boolean
+        visualImpairment:
+          type: boolean
+        hearingImpairment:
+          type: boolean
+        oxygenRequired:
+          type: boolean
+        stretcherRequired:
+          type: boolean
+        notes:
+          type: string
+
+    BookingPassengerAddons:
+      type: object
+      description: >
+        Per-passenger per-leg add-ons with explicit prices from addons catalog / seatmap.
+        Legacy `extraBaggage` / `meal` enums still supported with fixed fallback pricing.
+      properties:
+        extraBaggage:
+          $ref: '#/components/schemas/BookingExtraBaggage'
+        meal:
+          $ref: '#/components/schemas/BookingMealType'
+        priorityBoarding:
+          type: boolean
+        loungeAccess:
+          type: boolean
+        priorityBoardingPrice:
+          type: number
+        loungeAccessPrice:
+          type: number
+        baggage:
+          $ref: '#/components/schemas/BookingBaggageAddonSelection'
+        mealSelection:
+          $ref: '#/components/schemas/BookingMealAddonSelection'
+
+    BoardingPass:
+      type: object
+      required:
+        - boardingGroup
+        - gate
+        - boardingTime
+        - seat
+        - barcode
+        - s3Key
+        - checkInPageUrl
+        - issuedAt
+      properties:
+        boardingGroup:
+          type: string
+          enum: [A, B, C, D]
+        gate:
+          type: string
+          example: B44
+        boardingTime:
+          type: string
+          format: date-time
+        seat:
+          type: string
+          example: 14A
+        barcode:
+          type: string
+          description: >
+            Unique per passenger per leg. Format `BP` + bookingReference + legOrder +
+            first 6 chars of passengerId (uppercase, no hyphens).
+        s3Key:
+          type: string
+          example: boarding-passes/{bookingId}/{passengerId}/leg-0.pdf
+        checkInPageUrl:
+          type: string
+          format: uri
+        issuedAt:
+          type: string
+          format: date-time
+        pdfUrl:
+          type: string
+          format: uri
+          description: Pre-signed S3 URL (24-hour expiry)
+
+    BookingCancellationInfo:
+      type: object
+      required: [cancelledAt, refundAmount, refundStatus]
+      properties:
+        cancelledAt:
+          type: string
+          format: date-time
+        reason:
+          type: string
+        refundAmount:
+          type: number
+        refundStatus:
+          type: string
+          enum: [pending, processed]
+
+    BookingChangeHistoryEntry:
+      type: object
+      required: [changedAt, legId, legOrder, oldFlightId, newFlightId, fareDifference]
+      properties:
+        changedAt:
+          type: string
+          format: date-time
+        legId:
+          type: string
+          format: uuid
+        legOrder:
+          type: integer
+          minimum: 0
+        oldFlightId:
+          type: string
+          format: uuid
+        newFlightId:
+          type: string
+          format: uuid
+        fareDifference:
+          type: number
+        reason:
+          type: string
+
+    BookingLeg:
+      type: object
+      required: [legId, legOrder, flight, passengerCount]
+      properties:
+        legId:
+          type: string
+          format: uuid
+        legOrder:
+          type: integer
+          minimum: 0
+          description: Zero-based leg order (0=outbound, 1=connecting, etc.)
+        flight:
+          $ref: '#/components/schemas/BookingFlightSnapshot'
+        passengerCount:
+          type: integer
+          minimum: 1
+
+    PassengerLegAssignment:
+      type: object
+      required: [legId, legOrder, seatNumber, addons, passengerFare]
+      properties:
+        legId:
+          type: string
+          format: uuid
+        legOrder:
+          type: integer
+          minimum: 0
+        seatNumber:
+          type: string
+          example: 14A
+        seatSelection:
+          $ref: '#/components/schemas/BookingSeatSelection'
+        addons:
+          $ref: '#/components/schemas/BookingPassengerAddons'
+        passengerFare:
+          $ref: '#/components/schemas/BookingPassengerFare'
+        boardingPass:
+          $ref: '#/components/schemas/BoardingPass'
+
+    BookingRecord:
+      type: object
+      required:
+        - bookingId
+        - bookingReference
+        - userId
+        - legs
+        - cabinClass
+        - status
+        - checkInStatus
+        - boardingPassIssued
+        - contactEmail
+        - contactPhone
+        - totalAmount
+        - currency
+        - fareBreakdown
+        - paymentStatus
+        - changeHistory
+        - passengerCount
+        - legCount
+        - createdAt
+        - updatedAt
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        bookingReference:
+          type: string
+          pattern: '^[A-Z0-9]{6}$'
+          example: EK8X3F
+        userId:
+          type: string
+          format: uuid
+        legs:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/BookingLeg'
+        cabinClass:
+          type: integer
+          enum: [1, 2, 3, 4]
+          description: 1=economy, 2=premium_economy, 3=business, 4=first
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+        checkInStatus:
+          $ref: '#/components/schemas/CheckInStatus'
+        boardingPassIssued:
+          type: boolean
+        contactEmail:
+          type: string
+          format: email
+        contactPhone:
+          type: string
+        totalAmount:
+          type: number
+        currency:
+          type: string
+        fareBreakdown:
+          $ref: '#/components/schemas/BookingFareBreakdown'
+        tripProtection:
+          $ref: '#/components/schemas/BookingTripProtection'
+        paymentStatus:
+          $ref: '#/components/schemas/BookingPaymentStatus'
+        cancellationInfo:
+          $ref: '#/components/schemas/BookingCancellationInfo'
+        changeHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingChangeHistoryEntry'
+        passengerCount:
+          type: integer
+          minimum: 1
+        legCount:
+          type: integer
+          minimum: 1
+          maximum: 4
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BookingPassenger:
+      type: object
+      required:
+        - bookingId
+        - passengerId
+        - type
+        - title
+        - firstName
+        - lastName
+        - dateOfBirth
+        - nationality
+        - passportNumber
+        - passportExpiry
+        - specialAssistance
+        - legs
+        - createdAt
+        - updatedAt
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        passengerId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/PassengerType'
+        title:
+          $ref: '#/components/schemas/BookingPassengerTitle'
+        firstName:
+          type: string
+        lastName:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+        nationality:
+          type: string
+          minLength: 2
+          maxLength: 2
+        passportNumber:
+          type: string
+        passportExpiry:
+          type: string
+          format: date
+        frequentFlyerNumber:
+          type: string
+        specialAssistance:
+          $ref: '#/components/schemas/BookingSpecialAssistance'
+        legs:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/PassengerLegAssignment'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BookingWithPassengers:
+      allOf:
+        - $ref: '#/components/schemas/BookingRecord'
+        - type: object
+          required: [passengers]
+          properties:
+            passengers:
+              type: array
+              items:
+                $ref: '#/components/schemas/BookingPassenger'
+
+    BookingListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/BookingRecord'
+
+    PassengerLegRequest:
+      type: object
+      required: [legOrder, seatNumber]
+      properties:
+        legOrder:
+          type: integer
+          minimum: 0
+          description: Zero-based index matching the booking legs array
+        seatNumber:
+          type: string
+          example: 14A
+        seatSelection:
+          $ref: '#/components/schemas/BookingSeatSelection'
+        addons:
+          $ref: '#/components/schemas/BookingPassengerAddons'
+
+    CreateBookingPassengerRequest:
+      type: object
+      required:
+        - type
+        - title
+        - firstName
+        - lastName
+        - dateOfBirth
+        - nationality
+        - passportNumber
+        - passportExpiry
+        - legs
+      properties:
+        type:
+          $ref: '#/components/schemas/PassengerType'
+        title:
+          $ref: '#/components/schemas/BookingPassengerTitle'
+        firstName:
+          type: string
+        lastName:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+        nationality:
+          type: string
+          minLength: 2
+          maxLength: 2
+        passportNumber:
+          type: string
+        passportExpiry:
+          type: string
+          format: date
+        frequentFlyerNumber:
+          type: string
+        specialAssistance:
+          $ref: '#/components/schemas/BookingSpecialAssistance'
+        legs:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/PassengerLegRequest'
+
+    BookingLegSegmentInput:
+      type: object
+      description: >
+        Per-leg route and local times for a connecting segment. Copy from search `segments[]`
+        when booking a multi-stop card. When omitted, airports and times come from the offer
+        referenced by `flightId` (correct when each leg uses its own segment offer UUID).
+      required:
+        - fromAirportCode
+        - toAirportCode
+        - departureTimeLocal
+        - arrivalTimeLocal
+      properties:
+        fromAirportCode:
+          type: string
+          example: BLR
+        toAirportCode:
+          type: string
+          example: MAA
+        fromAirportName:
+          type: string
+          example: Bengaluru
+        toAirportName:
+          type: string
+          example: Chennai
+        departureTimeLocal:
+          type: string
+          example: "07:00"
+        arrivalTimeLocal:
+          type: string
+          example: "08:30"
+
+    BookingLegRequest:
+      type: object
+      required: [flightId, fareClassCode, departureDate]
+      properties:
+        flightId:
+          type: string
+          format: uuid
+          description: >
+            Per-segment offer UUID. For connecting cards use `segmentFlightIds[i]` from search,
+            not the parent connecting card id on every leg.
+        fareClassCode:
+          type: string
+        departureDate:
+          type: string
+          format: date
+          description: >
+            Travel date from flight search (YYYY-MM-DD). Departure and arrival times on the
+            booking snapshot are built from this date plus `segment` local times or the offer's
+            local times — not the stale `departureEpoch` stored in FlightOffers.
+        segment:
+          $ref: '#/components/schemas/BookingLegSegmentInput'
+
+    CreateBookingRequest:
+      type: object
+      description: >
+        Each passenger `legs` array must contain exactly one entry per booking leg (matching `legOrder` 0..n-1).
+        Seat numbers must be unique per leg across all passengers. Each booking leg must include `departureDate`
+        (the date the user searched for) so snapshot times are correct with mock flight data. For connecting
+        flights, each booking leg should use a distinct segment `flightId` and include `segment` with that
+        leg's airports and times from search `segments[]`.
+      required:
+        - legs
+        - cabinClass
+        - contactEmail
+        - contactPhone
+        - passengers
+      properties:
+        legs:
+          type: array
+          minItems: 1
+          maxItems: 4
+          description: Flight legs in travel order (outbound, connecting, return).
+          items:
+            $ref: '#/components/schemas/BookingLegRequest'
+        cabinClass:
+          type: integer
+          enum: [1, 2, 3, 4]
+          description: Applies to the entire booking (not per leg). 1=economy, 2=premium_economy, 3=business, 4=first
+        contactEmail:
+          type: string
+          format: email
+        contactPhone:
+          type: string
+        passengers:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/CreateBookingPassengerRequest'
+        tripProtection:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/BookingTripProtection'
+          description: Optional booking-level trip protection from addons catalog.
+
+    UpdateBookingPassengerRequest:
+      type: object
+      properties:
+        specialAssistance:
+          $ref: '#/components/schemas/BookingSpecialAssistance'
+        frequentFlyerNumber:
+          type: string
+        passportNumber:
+          type: string
+        passportExpiry:
+          type: string
+          format: date
+
+    UpdateBookingSeatRequest:
+      type: object
+      required: [legId, seatNumber]
+      properties:
+        legId:
+          type: string
+          format: uuid
+        seatNumber:
+          type: string
+          example: 22F
+        seatSelection:
+          $ref: '#/components/schemas/BookingSeatSelection'
+
+    UpdateBookingAddonsRequest:
+      type: object
+      description: >
+        At least one add-on field must be present. Prefer `baggage` / `mealSelection` with explicit
+        prices from the addons catalog. Set nullable fields to `null` to remove.
+      required: [legId]
+      properties:
+        legId:
+          type: string
+          format: uuid
+        extraBaggage:
+          description: Set to `null` to remove this add-on.
+          type: string
+          nullable: true
+          enum: ['15kg', '23kg', '32kg']
+        meal:
+          description: Set to `null` to remove this add-on.
+          type: string
+          nullable: true
+          enum: [standard, vegetarian, vegan, halal, kosher, child_meal]
+        priorityBoarding:
+          type: boolean
+        loungeAccess:
+          type: boolean
+        priorityBoardingPrice:
+          type: number
+        loungeAccessPrice:
+          type: number
+        baggage:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/BookingBaggageAddonSelection'
+        mealSelection:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/BookingMealAddonSelection'
+
+    UpdateBookingAddonsResult:
+      type: object
+      required: [passenger, bookingTotal]
+      properties:
+        passenger:
+          $ref: '#/components/schemas/BookingPassenger'
+        bookingTotal:
+          type: number
+
+    ChangeBookingFlightRequest:
+      type: object
+      required: [legId, newFlightId]
+      properties:
+        legId:
+          type: string
+          format: uuid
+        newFlightId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          maxLength: 500
+
+    ChangeBookingFlightResult:
+      allOf:
+        - $ref: '#/components/schemas/BookingWithPassengers'
+        - type: object
+          required: [fareDifference]
+          properties:
+            fareDifference:
+              type: number
+
+    BoardingPassesResult:
+      type: object
+      required: [passengers]
+      properties:
+        passengers:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingPassenger'
+
+    CheckInNotOpenError:
+      type: object
+      required: [success, message, hoursUntilOpen]
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Check-in is not yet open. Opens in 12 hours.
+        hoursUntilOpen:
+          type: integer
+          minimum: 1
+          description: Hours until the 48-hour check-in window opens (based on earliest leg departure)

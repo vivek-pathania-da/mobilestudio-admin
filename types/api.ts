@@ -311,3 +311,141 @@ export interface DashboardMetrics {
   generatedAt: string;
   cachedUntil: string;
 }
+
+// ── Notifications (admin mock generators) ─────────────────────────────────────
+
+export type NotificationType =
+  | 'ticket_confirmed'
+  | 'flight_cancelled'
+  | 'flight_delayed'
+  | 'gate_changed';
+
+export interface FlightDelayedMetadata {
+  delayMins: number;
+  newDepartureAt: string;
+}
+
+export interface FlightCancelledMetadata {
+  reason?: string;
+}
+
+export interface GateChangedMetadata {
+  oldGate: string;
+  newGate: string;
+}
+
+export type NotificationMetadata =
+  | Record<string, never>
+  | FlightDelayedMetadata
+  | FlightCancelledMetadata
+  | GateChangedMetadata;
+
+export interface Notification {
+  notificationId: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  bookingId: string;
+  bookingReference: string;
+  flightNumber: string;
+  origin: string;
+  destination: string;
+  isRead: boolean;
+  metadata: NotificationMetadata;
+  createdAt: string;
+  ttl: number;
+}
+
+export interface MockFlightDelayedRequest {
+  bookingId: string;
+  delayMins: number;
+  newDepartureAt: string;
+}
+
+export interface MockFlightCancelledRequest {
+  bookingId: string;
+  reason?: string;
+}
+
+export interface MockGateChangedRequest {
+  bookingId: string;
+  oldGate: string;
+  newGate: string;
+}
+
+// ── Bookings (subset needed by admin mock notifications) ──────────────────────
+
+export type BookingStatus =
+  | 'confirmed'
+  | 'changed'
+  | 'checked_in'
+  | 'cancelled'
+  | 'completed';
+
+export interface BookingFlightSnapshot {
+  flightId: string;
+  flightNumber: string;
+  airline: string;
+  airlineCode: string;
+  origin: string;
+  destination: string;
+  originName: string;
+  destinationName: string;
+  departureAt: string;
+  arrivalAt: string;
+  durationMins: number;
+  /** Optional gate shown before check-in (first leg). */
+  gate?: string | null;
+  aircraftType: string;
+  fareClassCode: string;
+  fareName: string;
+  basePricePerPerson: number;
+  taxPerPerson: number;
+  currency: string;
+}
+
+export interface BookingLeg {
+  legId: string;
+  legOrder: number;
+  flight: BookingFlightSnapshot;
+  passengerCount: number;
+}
+
+export interface BookingRecord {
+  bookingId: string;
+  bookingReference: string;
+  userId: string;
+  legs: BookingLeg[];
+  cabinClass: 1 | 2 | 3 | 4;
+  status: BookingStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BookingWithPassengers extends BookingRecord {
+  passengers: unknown[];
+}
+
+export interface MockNotificationResult {
+  notification: Notification;
+  booking: BookingWithPassengers;
+}
+
+// ── Admin: users + bookings lookup ───────────────────────────────────────────
+
+export interface AdminUserListItem {
+  userId: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  createdAt: string;
+}
+
+export interface AdminBookingListItem {
+  bookingId: string;
+  bookingReference?: string;
+  createdAt?: string;
+  status?: string;
+  earliestDepartureAt?: string;
+}
